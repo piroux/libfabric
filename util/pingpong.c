@@ -28,10 +28,6 @@
  * SOFTWARE.
  */
 
-// shared.h
-//#ifndef _SHARED_H_
-//#define _SHARED_H_
-
 #if HAVE_CONFIG_H
 #  include <config.h>
 #endif /* HAVE_CONFIG_H */
@@ -189,12 +185,6 @@ struct ft_opts {
 #define FT_MSG_MR_ACCESS (FI_SEND | FI_RECV)
 #define FT_RMA_MR_ACCESS (FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE)
 
-//int ft_getsrcaddr(char *node, char *service, struct fi_info *hints);
-//int ft_read_addr_opts(char **node, char **service, struct fi_info *hints,
-//		uint64_t *flags, struct ft_opts *opts);
-//char *size_str(char str[FT_STR_LEN], long long size);
-//char *cnt_str(char str[FT_STR_LEN], long long cnt);
-//int size_to_count(int size);
 
 
 #define FT_PRINTERR(call, retv) \
@@ -269,8 +259,6 @@ struct ft_opts {
 	} while (0)
 
 
-
-// shared.c
 
 struct fi_info *fi_pep, *fi, *hints;
 struct fid_fabric *fabric;
@@ -367,16 +355,9 @@ const unsigned int test_cnt = (sizeof test_size / sizeof test_size[0]);
 static const char integ_alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 static const int integ_alphabet_length = (sizeof(integ_alphabet)/sizeof(*integ_alphabet)) - 1;
 
-// benchmark_shared.h
-
 #define BENCHMARK_OPTS "vPj:W:"
 #define FT_BENCHMARK_MAX_MSG_SIZE (test_size[TEST_CNT - 1].size)
 
-void ft_parse_benchmark_opts(int op, char *optarg);
-void ft_benchmark_usage(void);
-int pingpong(void);
-int bandwidth(void);
-int bandwidth_rma(enum ft_rma_opcodes op, struct fi_rma_iov *remote);
 
 /*******************************************************************************************/
 /*                                       FT proto                                          */
@@ -444,6 +425,18 @@ void show_perf_mr(int tsize, int iters, struct timespec *start,
 int send_recv_greeting(struct fid_ep *ep);
 int check_recv_msg(const char *message);
 
+int ft_getsrcaddr(char *node, char *service, struct fi_info *hints);
+int ft_read_addr_opts(char **node, char **service, struct fi_info *hints,
+		uint64_t *flags, struct ft_opts *opts);
+char *size_str(char str[FT_STR_LEN], long long size);
+char *cnt_str(char str[FT_STR_LEN], long long cnt);
+int size_to_count(int size);
+
+void ft_parse_benchmark_opts(int op, char *optarg);
+void ft_benchmark_usage(void);
+int pingpong(void);
+int bandwidth(void);
+int bandwidth_rma(enum ft_rma_opcodes op, struct fi_rma_iov *remote);
 
 /*******************************************************************************************/
 /*                                       FT func                                           */
@@ -2263,9 +2256,6 @@ int send_recv_greeting(struct fid_ep *ep)
 /*                                      PING PONG                                          */
 /*******************************************************************************************/
 
-
-// benchmark_shared.c
-
 //extern struct fi_context *ctx_arr;
 
 void ft_parse_benchmark_opts(int op, char *optarg)
@@ -2537,7 +2527,7 @@ int bandwidth_rma(enum ft_rma_opcodes rma_op, struct fi_rma_iov *remote)
 // dgram_pingpong.c
 
 
-static int run(void)
+static int run_pingpong_dgram(void)
 {
 	int i, ret;
 
@@ -2575,9 +2565,77 @@ static int run(void)
 	return ft_finalize();
 }
 
+static int run_pingpong_rdm(void)
+{
+	int i, ret = 0;
+
+	ret = ft_init_fabric();
+	if (ret)
+		return ret;
+
+	if (!(opts.options & FT_OPT_SIZE)) {
+		for (i = 0; i < TEST_CNT; i++) {
+			if (!ft_use_size(i, opts.sizes_enabled))
+				continue;
+			opts.transfer_size = test_size[i].size;
+			init_test(&opts, test_name, sizeof(test_name));
+			ret = pingpong();
+			if (ret)
+				return ret;
+		}
+	} else {
+		init_test(&opts, test_name, sizeof(test_name));
+		ret = pingpong();
+		if (ret)
+			return ret;
+	}
+
+	return ft_finalize();
+}
+
+static int run_pingpong_msg(void)
+{
+	int i, ret;
+
+	if (!opts.dst_addr) {
+		ret = ft_start_server();
+		if (ret)
+			return ret;
+	}
+
+	ret = opts.dst_addr ? ft_client_connect() : ft_server_connect();
+	if (ret) {
+		return ret;
+	}
+
+	if (!(opts.options & FT_OPT_SIZE)) {
+		for (i = 0; i < TEST_CNT; i++) {
+			if (!ft_use_size(i, opts.sizes_enabled))
+				continue;
+			opts.transfer_size = test_size[i].size;
+			init_test(&opts, test_name, sizeof(test_name));
+			ret = pingpong();
+			if (ret)
+				goto out;
+		}
+	} else {
+		init_test(&opts, test_name, sizeof(test_name));
+		ret = pingpong();
+		if (ret)
+			goto out;
+	}
+
+	ret = ft_finalize();
+out:
+	fi_shutdown(ep, 0);
+	return ret;
+}
+
 int main(int argc, char **argv)
 {
 	int ret, op;
+
+	ret = EXIT_SUCCESS;
 
 	opts = INIT_OPTS;
 
@@ -2587,7 +2645,8 @@ int main(int argc, char **argv)
 	if (!hints)
 		return EXIT_FAILURE;
 
-	while ((op = getopt(argc, argv, "hT:" CS_OPTS INFO_OPTS BENCHMARK_OPTS)) !=
+	//while ((op = getopt(argc, argv, "hT:" CS_OPTS INFO_OPTS BENCHMARK_OPTS)) !=
+	while ((op = getopt(argc, argv, "h:" CS_OPTS INFO_OPTS BENCHMARK_OPTS)) !=
 			-1) {
 		switch (op) {
 		//case 'T':
@@ -2602,8 +2661,8 @@ int main(int argc, char **argv)
 		case 'h':
 			ft_csusage(argv[0], "Ping pong client and server using UD.");
 			ft_benchmark_usage();
-			FT_PRINT_OPTS_USAGE("-T <timeout>",
-					"seconds before timeout on receive");
+			//FT_PRINT_OPTS_USAGE("-T <timeout>",
+			//		"seconds before timeout on receive");
 			return EXIT_FAILURE;
 		}
 	}
@@ -2611,13 +2670,36 @@ int main(int argc, char **argv)
 	if (optind < argc)
 		opts.dst_addr = argv[optind];
 
-	hints->ep_attr->type = FI_EP_DGRAM;
-	if (opts.options & FT_OPT_SIZE)
-		hints->ep_attr->max_msg_size = opts.transfer_size;
-	hints->caps = FI_MSG;
-	hints->mode |= FI_LOCAL_MR;
+	if (!hints->ep_attr->type || hints->ep_attr->type == FI_EP_UNSPEC) {
+		hints->ep_attr->type = FI_EP_DGRAM;
+	}
 
-	ret = run();
+	switch(hints->ep_attr->type) {
+	case FI_EP_DGRAM:
+		//hints->ep_attr->type = FI_EP_DGRAM;
+		if (opts.options & FT_OPT_SIZE)
+			hints->ep_attr->max_msg_size = opts.transfer_size;
+		hints->caps = FI_MSG;
+		hints->mode |= FI_LOCAL_MR;
+
+		ret = run_pingpong_dgram();
+		break;
+	case FI_EP_RDM:
+		//hints->ep_attr->type = FI_EP_RDM;
+		hints->caps = FI_MSG;
+		hints->mode = FI_CONTEXT | FI_LOCAL_MR;
+		ret = run_pingpong_rdm();
+		break;
+	case FI_EP_MSG:
+		//hints->ep_attr->type = FI_EP_MSG;
+		hints->caps = FI_MSG;
+		hints->mode = FI_LOCAL_MR;
+		ret = run_pingpong_msg();
+	default:
+		fprintf(stderr, "Endpoint unsupported : %d\n", hints->ep_attr->type);
+		ret = EXIT_FAILURE;
+	}
+
 
 	ft_free_res();
 	return -ret;
