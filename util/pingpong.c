@@ -107,18 +107,18 @@ enum ft_rma_opcodes {
 
 struct ft_opts {
 	int iterations;
-	int warmup_iterations;
+	int warmup_iterations; //SNIP
 	int transfer_size;
-	int window_size;
+	int window_size; //SNIP
 	char *src_port;
 	char *dst_port;
 	char *src_addr;
 	char *dst_addr;
-	char *av_name;
+	char *av_name; //SNIP
 	int sizes_enabled;
 	int options;
-	enum ft_comp_method comp_method;
-	int machr;
+	enum ft_comp_method comp_method; //SNIP
+	int machr; //SNIP
 	enum ft_rma_opcodes rma_op;
 	int argc;
 	char **argv;
@@ -449,13 +449,13 @@ static inline int ft_use_size(int index, int enable_flags)
 		(enable_flags & test_size[index].enable_flags);
 }
 
-static inline void ft_start(void)
+static inline void ft_start(void) //SNIP
 {
 	opts.options |= FT_OPT_ACTIVE;
 	clock_gettime(CLOCK_MONOTONIC, &start);
 }
 
-static inline void ft_stop(void)
+static inline void ft_stop(void) //SNIP
 {
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	opts.options &= ~FT_OPT_ACTIVE;
@@ -1114,7 +1114,7 @@ void init_test(struct ft_opts *opts, char *test_name, size_t test_name_len)
 
 ssize_t ft_post_tx(struct fid_ep *ep, size_t size, struct fi_context* ctx)
 {
-	if (hints->caps & FI_TAGGED) {
+	if (hints->caps & FI_TAGGED) { //SNIP
 		FT_POST(fi_tsend, ft_get_tx_comp, tx_seq, "transmit", ep,
 				tx_buf, size + ft_tx_prefix_size(), fi_mr_desc(mr),
 				remote_fi_addr, tx_seq, ctx);
@@ -1143,7 +1143,7 @@ ssize_t ft_tx(struct fid_ep *ep, size_t size)
 
 ssize_t ft_post_inject(struct fid_ep *ep, size_t size)
 {
-	if (hints->caps & FI_TAGGED) {
+	if (hints->caps & FI_TAGGED) { //SNIP
 		FT_POST(fi_tinject, ft_get_tx_comp, tx_seq, "inject",
 				ep, tx_buf, size + ft_tx_prefix_size(),
 				remote_fi_addr, tx_seq);
@@ -1171,7 +1171,7 @@ ssize_t ft_inject(struct fid_ep *ep, size_t size)
 	return ret;
 }
 
-ssize_t ft_post_rma(enum ft_rma_opcodes op, struct fid_ep *ep, size_t size,
+ssize_t ft_post_rma(enum ft_rma_opcodes op, struct fid_ep *ep, size_t size, //SNIP
 		struct fi_rma_iov *remote, void *context)
 {
 	switch (op) {
@@ -1199,7 +1199,7 @@ ssize_t ft_post_rma(enum ft_rma_opcodes op, struct fid_ep *ep, size_t size,
 	return 0;
 }
 
-ssize_t ft_rma(enum ft_rma_opcodes op, struct fid_ep *ep, size_t size,
+ssize_t ft_rma(enum ft_rma_opcodes op, struct fid_ep *ep, size_t size, //SNIP
 		struct fi_rma_iov *remote, void *context)
 {
 	int ret;
@@ -1221,7 +1221,7 @@ ssize_t ft_rma(enum ft_rma_opcodes op, struct fid_ep *ep, size_t size,
 	return 0;
 }
 
-ssize_t ft_post_rma_inject(enum ft_rma_opcodes op, struct fid_ep *ep, size_t size,
+ssize_t ft_post_rma_inject(enum ft_rma_opcodes op, struct fid_ep *ep, size_t size, //SNIP
 		struct fi_rma_iov *remote)
 {
 	switch (op) {
@@ -1247,7 +1247,7 @@ ssize_t ft_post_rma_inject(enum ft_rma_opcodes op, struct fid_ep *ep, size_t siz
 
 ssize_t ft_post_rx(struct fid_ep *ep, size_t size, struct fi_context* ctx)
 {
-	if (hints->caps & FI_TAGGED) {
+	if (hints->caps & FI_TAGGED) { //SNIP
 		FT_POST(fi_trecv, ft_get_rx_comp, rx_seq, "receive", ep, rx_buf,
 				MAX(size, FT_MAX_CTRL_MSG) + ft_rx_prefix_size(),
 				fi_mr_desc(mr), 0, rx_seq, 0, ctx);
@@ -1319,7 +1319,7 @@ static int ft_spin_for_comp(struct fid_cq *cq, uint64_t *cur,
 /*
  * fi_cq_err_entry can be cast to any CQ entry format.
  */
-static int ft_wait_for_comp(struct fid_cq *cq, uint64_t *cur,
+static int ft_wait_for_comp(struct fid_cq *cq, uint64_t *cur, //SNIP
 			    uint64_t total, int timeout)
 {
 	struct fi_cq_err_entry comp;
@@ -1339,7 +1339,7 @@ static int ft_wait_for_comp(struct fid_cq *cq, uint64_t *cur,
 /*
  * fi_cq_err_entry can be cast to any CQ entry format.
  */
-static int ft_fdwait_for_comp(struct fid_cq *cq, uint64_t *cur,
+static int ft_fdwait_for_comp(struct fid_cq *cq, uint64_t *cur, //SNIP
 			    uint64_t total, int timeout)
 {
 	struct fi_cq_err_entry comp;
@@ -1375,10 +1375,10 @@ static int ft_get_cq_comp(struct fid_cq *cq, uint64_t *cur,
 
 	switch (opts.comp_method) {
 	case FT_COMP_SREAD:
-		ret = ft_wait_for_comp(cq, cur, total, timeout);
+		ret = ft_wait_for_comp(cq, cur, total, timeout); //SNIP
 		break;
 	case FT_COMP_WAIT_FD:
-		ret = ft_fdwait_for_comp(cq, cur, total, timeout);
+		ret = ft_fdwait_for_comp(cq, cur, total, timeout); //SNIP
 		break;
 	default:
 		ret = ft_spin_for_comp(cq, cur, total, timeout);
@@ -1471,7 +1471,7 @@ int ft_sync()
 	return ret;
 }
 
-int ft_sync_pair(int status)
+int ft_sync_pair(int status) //SNIP
 {
 	int ret;
 	int pair_status;
@@ -1507,7 +1507,7 @@ int ft_sync_pair(int status)
 	return 0;
 }
 
-int ft_fork_and_pair()
+int ft_fork_and_pair() //SNIP
 {
 	int ret;
 
@@ -1528,7 +1528,7 @@ int ft_fork_and_pair()
 	return 0;
 }
 
-int ft_wait_child()
+int ft_wait_child() //SNIP
 {
 	int ret;
 
@@ -1978,7 +1978,7 @@ void show_perf(char *name, int tsize, int iters, struct timespec *start,
 		usec_per_xfer, 1.0/usec_per_xfer);
 }
 
-void show_perf_mr(int tsize, int iters, struct timespec *start,
+void show_perf_mr(int tsize, int iters, struct timespec *start, //SNIP
 		  struct timespec *end, int xfers_per_iter, int argc, char *argv[])
 {
 	static int header = 1;
@@ -2197,7 +2197,7 @@ int ft_parse_rma_opts(int op, char *optarg, struct ft_opts *opts)
 }
 
 
-int check_recv_msg(const char *message)
+int check_recv_msg(const char *message) //SNIP
 {
 	size_t recv_len;
 	size_t message_len = strlen(message) + 1;
@@ -2217,7 +2217,7 @@ int check_recv_msg(const char *message)
 	return 0;
 }
 
-int send_recv_greeting(struct fid_ep *ep)
+int send_recv_greeting(struct fid_ep *ep) //SNIP
 {
 	int ret;
 	const char *message = "Hello from Client!";
@@ -2285,9 +2285,9 @@ void ft_parse_benchmark_opts(int op, char *optarg)
 void ft_benchmark_usage(void)
 {
 	FT_PRINT_OPTS_USAGE("-v", "enables data_integrity checks");
-	FT_PRINT_OPTS_USAGE("-P", "enable prefix mode");
+	FT_PRINT_OPTS_USAGE("-P", "enable prefix mode"); //SNIP
 	FT_PRINT_OPTS_USAGE("-j", "maximum inject message size");
-	FT_PRINT_OPTS_USAGE("-W", "window size* (for bandwidth tests)\n\n"
+	FT_PRINT_OPTS_USAGE("-W", "window size* (for bandwidth tests)\n\n" //SNIP
 			"* The following condition is required to have at least "
 			"one window\nsize # of messsages to be sent: "
 			"# of iterations > window size");
@@ -2303,8 +2303,8 @@ int pingpong(void)
 
 	if (opts.dst_addr) {
 		for (i = 0; i < opts.iterations + opts.warmup_iterations; i++) {
-			if (i == opts.warmup_iterations)
-				ft_start();
+			if (i == opts.warmup_iterations) //SNIP
+				ft_start(); //SNIP
 
 			if (opts.transfer_size < fi->tx_attr->inject_size)
 				ret = ft_inject(ep, opts.transfer_size);
@@ -2319,8 +2319,8 @@ int pingpong(void)
 		}
 	} else {
 		for (i = 0; i < opts.iterations + opts.warmup_iterations; i++) {
-			if (i == opts.warmup_iterations)
-				ft_start();
+			if (i == opts.warmup_iterations) //SNIP
+				ft_start(); //SNIP
 
 			ret = ft_rx(ep, opts.transfer_size);
 			if (ret)
@@ -2336,16 +2336,16 @@ int pingpong(void)
 	}
 	ft_stop();
 
-	if (opts.machr)
-		show_perf_mr(opts.transfer_size, opts.iterations, &start, &end, 2,
-				opts.argc, opts.argv);
+	if (opts.machr) //SNIP
+		show_perf_mr(opts.transfer_size, opts.iterations, &start, &end, 2, //SNIP
+				opts.argc, opts.argv); //SNIP
 	else
 		show_perf(NULL, opts.transfer_size, opts.iterations, &start, &end, 2);
 
 	return 0;
 }
 
-static int bw_tx_comp()
+static int bw_tx_comp() //SNIP
 {
 	int ret;
 
@@ -2355,7 +2355,7 @@ static int bw_tx_comp()
 	return ft_rx(ep, 4);
 }
 
-static int bw_rx_comp()
+static int bw_rx_comp() //SNIP
 {
 	int ret;
 
@@ -2366,7 +2366,7 @@ static int bw_rx_comp()
 	return ft_tx(ep, 4);
 }
 
-int bandwidth(void)
+int bandwidth(void) //SNIP
 {
 	int ret, i, j;
 
@@ -2435,7 +2435,7 @@ int bandwidth(void)
 	return 0;
 }
 
-static int bw_rma_comp(enum ft_rma_opcodes rma_op)
+static int bw_rma_comp(enum ft_rma_opcodes rma_op) //SNIP
 {
 	int ret;
 
@@ -2454,7 +2454,7 @@ static int bw_rma_comp(enum ft_rma_opcodes rma_op)
 	return 0;
 }
 
-int bandwidth_rma(enum ft_rma_opcodes rma_op, struct fi_rma_iov *remote)
+int bandwidth_rma(enum ft_rma_opcodes rma_op, struct fi_rma_iov *remote) //SNIP
 {
 	int ret, i, j;
 
@@ -2531,6 +2531,8 @@ static int run_pingpong_dgram(void)
 {
 	int i, ret;
 
+	fprintf(stderr, "Running pingpong test with DGRAM endpoint\n");
+
 	ret = ft_init_fabric();
 	if (ret)
 		return ret;
@@ -2569,6 +2571,8 @@ static int run_pingpong_rdm(void)
 {
 	int i, ret = 0;
 
+	fprintf(stderr, "Running pingpong test with RDM endpoint\n");
+
 	ret = ft_init_fabric();
 	if (ret)
 		return ret;
@@ -2596,6 +2600,8 @@ static int run_pingpong_rdm(void)
 static int run_pingpong_msg(void)
 {
 	int i, ret;
+
+	fprintf(stderr, "Running pingpong test with MSG endpoint\n");
 
 	if (!opts.dst_addr) {
 		ret = ft_start_server();
@@ -2681,7 +2687,6 @@ int main(int argc, char **argv)
 			hints->ep_attr->max_msg_size = opts.transfer_size;
 		hints->caps = FI_MSG;
 		hints->mode |= FI_LOCAL_MR;
-
 		ret = run_pingpong_dgram();
 		break;
 	case FI_EP_RDM:
@@ -2695,6 +2700,7 @@ int main(int argc, char **argv)
 		hints->caps = FI_MSG;
 		hints->mode = FI_LOCAL_MR;
 		ret = run_pingpong_msg();
+		break;
 	default:
 		fprintf(stderr, "Endpoint unsupported : %d\n", hints->ep_attr->type);
 		ret = EXIT_FAILURE;
