@@ -90,7 +90,6 @@ enum {
 struct ft_opts {
 	int iterations;
 	int transfer_size;
-	int window_size; //SNIP ???
 	char *src_port;
 	char *dst_port;
 	char *src_addr;
@@ -104,13 +103,12 @@ struct ft_opts {
 #define ADDR_OPTS "b:p:s:"
 #define INFO_OPTS "n:f:e:"
 #define CS_OPTS ADDR_OPTS "I:S:"
-#define BENCHMARK_OPTS "v:"
+#define BENCHMARK_OPTS "v"
 
 #define INIT_OPTS (struct ft_opts) \
 	{	.options = FT_OPT_RX_CQ | FT_OPT_TX_CQ, \
 		.iterations = 1000, \
 		.transfer_size = 1024, \
-		.window_size = 64, \
 		.sizes_enabled = FT_DEFAULT_SIZE, \
 		.argc = argc, .argv = argv \
 	}
@@ -213,7 +211,6 @@ struct ct_pingpong {
 	struct fid_pep *pep;
 	struct fid_ep *ep, *alias_ep;
 	struct fid_cq *txcq, *rxcq;
-	struct fid_cntr *txcntr, *rxcntr;
 	struct fid_mr *mr;
 	struct fid_av *av;
 	struct fid_eq *eq;
@@ -224,10 +221,9 @@ struct ct_pingpong {
 	uint64_t remote_cq_data;
 
 	uint64_t tx_seq, rx_seq, tx_cq_cntr, rx_cq_cntr;
-	int ft_skip_mr;
+	//int ft_skip_mr;
 	int ft_parent_proc;
 	pid_t ft_child_pid;
-	int ft_socket_pair[2];
 
 	fi_addr_t remote_fi_addr;
 	void *buf, *tx_buf, *rx_buf;
@@ -242,7 +238,6 @@ struct ct_pingpong {
 	struct fi_av_attr av_attr;
 	struct fi_eq_attr eq_attr;
 	struct fi_cq_attr cq_attr;
-	struct fi_cntr_attr cntr_attr;
 	struct ft_opts opts;
 
 	const unsigned int test_cnt;
@@ -306,7 +301,6 @@ void ft_fill_buf(void *buf, int size);
 int ft_check_buf(void *buf, int size);
 
 uint64_t ft_init_cq_data(struct fi_info *info);
-//int ft_alloc_bufs();
 int ft_open_fabric_res(struct ct_pingpong *ct);
 int ft_getinfo(struct ct_pingpong *ct, struct fi_info *hints, struct fi_info **info);
 int ft_init_fabric();
@@ -461,6 +455,7 @@ int ft_alloc_msgs(struct ct_pingpong *ct)
 	if (ret) {
 		FT_PRINTERR("posix_memalign", ret);
 		return ret;
+	}
 	memset(ct->buf, 0, ct->buf_size);
 	ct->rx_buf = ct->buf;
 	ct->tx_buf = (char *) ct->buf + MAX(ct->rx_size, FT_MAX_CTRL_MSG);
@@ -469,14 +464,7 @@ int ft_alloc_msgs(struct ct_pingpong *ct)
 
 	ct->remote_cq_data = ft_init_cq_data(ct->fi);
 
-	if (ct->opts.window_size > 0) {
-		ct->ctx_arr = calloc(ct->opts.window_size, sizeof(struct fi_context));
-		if (!ct->ctx_arr)
-			return -FI_ENOMEM;
-	}
-
-	if (!ct->ft_skip_mr && ((ct->fi->mode & FI_LOCAL_MR) ||
-				(ct->fi->caps & (FI_RMA | FI_ATOMIC)))) {
+	if (ct->fi->mode & FI_LOCAL_MR) {
 		ret = fi_mr_reg(ct->domain, ct->buf, ct->buf_size, 0,
 				0, FT_MR_KEY, 0, &(ct->mr), NULL);
 		if (ret) {
@@ -537,30 +525,12 @@ int ft_alloc_active_res(struct ct_pingpong *ct, struct fi_info *fi)
 		}
 	}
 
-	if (ct->opts.options & FT_OPT_TX_CNTR) {
-		ft_cntr_set_wait_attr(ct); // ??
-		ret = fi_cntr_open(ct->domain, &(ct->cntr_attr), &(ct->txcntr), &(ct->txcntr));
-		if (ret) {
-			FT_PRINTERR("fi_cntr_open", ret);
-			return ret;
-		}
-	}
-
 	if (ct->opts.options & FT_OPT_RX_CQ) {
 		ct->cq_attr.wait_obj = FI_WAIT_NONE;
 		ct->cq_attr.size = fi->rx_attr->size;
 		ret = fi_cq_open(ct->domain, &(ct->cq_attr), &(ct->rxcq), &(ct->rxcq));
 		if (ret) {
 			FT_PRINTERR("fi_cq_open", ret);
-			return ret;
-		}
-	}
-
-	if (ct->opts.options & FT_OPT_RX_CNTR) {
-		ft_cntr_set_wait_attr(ct); // ??
-		ret = fi_cntr_open(ct->domain, &(ct->cntr_attr), &(ct->rxcntr), &(ct->rxcntr));
-		if (ret) {
-			FT_PRINTERR("fi_cntr_open", ret);
 			return ret;
 		}
 	}
@@ -710,8 +680,6 @@ static void ft_close_fids(struct ct_pingpong *ct)
 	FT_CLOSE_FID(ct->pollset);
 	FT_CLOSE_FID(ct->rxcq);
 	FT_CLOSE_FID(ct->txcq);
-	FT_CLOSE_FID(ct->rxcntr);
-	FT_CLOSE_FID(ct->txcntr);
 	FT_CLOSE_FID(ct->av);
 	FT_CLOSE_FID(ct->eq);
 	FT_CLOSE_FID(ct->domain);
@@ -975,16 +943,8 @@ int ft_get_rx_comp(struct ct_pingpong *ct, uint64_t total)
 
 	if (ct->rxcq) {
 		ret = ft_get_cq_comp(ct->rxcq, &(ct->rx_cq_cntr), total, ct->timeout);
-	} else if (ct->rxcntr) {
-		while (fi_cntr_read(ct->rxcntr) < total) {
-			ret = fi_cntr_wait(ct->rxcntr, total, ct->timeout);
-			if (ret)
-				FT_PRINTERR("fi_cntr_wait", ret);
-			else
-				break;
-		}
 	} else {
-		FT_ERR("Trying to get a RX completion when no RX CQ or counter were opened");
+		FT_ERR("Trying to get a RX completion when no RX CQ was opened");
 		ret = -FI_EOTHER;
 	}
 	return ret;
@@ -996,12 +956,8 @@ int ft_get_tx_comp(struct ct_pingpong *ct, uint64_t total)
 
 	if (ct->txcq) {
 		ret = ft_get_cq_comp(ct->txcq, &(ct->tx_cq_cntr), total, -1);
-	} else if (ct->txcntr) {
-		ret = fi_cntr_wait(ct->txcntr, total, -1);
-		if (ret)
-			FT_PRINTERR("fi_cntr_wait", ret);
 	} else {
-		FT_ERR("Trying to get a TX completion when no TX CQ or counter were opened");
+		FT_ERR("Trying to get a TX completion when no TX CQ was opened");
 		ret = -FI_EOTHER;
 	}
 	return ret;
@@ -1083,13 +1039,11 @@ int ft_init_ep(struct ct_pingpong *ct)
 		flags |= ct->hints->caps & (FI_WRITE | FI_READ);
 	else if (ct->hints->caps & FI_RMA)
 		flags |= FI_WRITE | FI_READ;
-	FT_EP_BIND(ct->ep, ct->txcntr, flags);
 	flags = !ct->rxcq ? FI_RECV : 0;
 	if (ct->hints->caps & (FI_REMOTE_WRITE | FI_REMOTE_READ))
 		flags |= ct->hints->caps & (FI_REMOTE_WRITE | FI_REMOTE_READ);
 	else if (ct->hints->caps & FI_RMA)
 		flags |= FI_REMOTE_WRITE | FI_REMOTE_READ;
-	FT_EP_BIND(ct->ep, ct->rxcntr, flags);
 
 	ret = fi_enable(ct->ep);
 	if (ret) {
@@ -1732,14 +1686,11 @@ void ft_init_ct_pingpong(struct ct_pingpong *ct)
 	ct->alias_ep = NULL;
 	ct->txcq = NULL;
 	ct->rxcq = NULL;
-	ct->txcntr = NULL;
-	ct->rxcntr = NULL;
 	ct->mr = NULL;
 	ct->av = NULL;
 	ct->eq = NULL;
 
 	//no_mr;
-	//tx_ctx, rx_ctx;
 	ct->ctx_arr = NULL;
 	ct->remote_cq_data = 0;
 
@@ -1748,10 +1699,9 @@ void ft_init_ct_pingpong(struct ct_pingpong *ct)
        	ct->tx_cq_cntr = 0;
 	ct->rx_cq_cntr = 0;
 
-	ct->ft_skip_mr = 0;
+	//ct->ft_skip_mr = 0;
 	ct->ft_parent_proc = 0;
 	ct->ft_child_pid = 0;
-	//ft_socket_pair[2];
 
 	ct->remote_fi_addr = FI_ADDR_UNSPEC;
 	ct->buf = NULL;
@@ -1779,11 +1729,6 @@ void ft_init_ct_pingpong(struct ct_pingpong *ct)
 	ct->cq_attr = (struct fi_cq_attr) {
 		.wait_obj = FI_WAIT_NONE
 	};
-	ct->cntr_attr = (struct fi_cntr_attr) {
-		.events = FI_CNTR_EVENTS_COMP,
-		.wait_obj = FI_WAIT_NONE
-	};
-
 }
 
 int main(int argc, char **argv)
@@ -1830,7 +1775,6 @@ int main(int argc, char **argv)
 		ret = run_pingpong_dgram(&ct);
 		break;
 	case FI_EP_RDM:
-		//ct->hints->ep_attr->type = FI_EP_RDM;
 		ct.hints->caps = FI_MSG;
 		ct.hints->mode = FI_CONTEXT | FI_LOCAL_MR;
 		ret = run_pingpong_rdm(&ct);
