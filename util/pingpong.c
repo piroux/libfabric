@@ -1412,21 +1412,23 @@ void ft_csusage(char *name, char *desc)
 		fprintf(stderr, "\n%s\n", desc);
 
 	fprintf(stderr, "\nOptions:\n");
-	FT_PRINT_OPTS_USAGE("-n <domain>", "domain name");
 	FT_PRINT_OPTS_USAGE("-b <src_port>", "non default source port number");
 	FT_PRINT_OPTS_USAGE("-p <dst_port>", "non default destination port number");
 	FT_PRINT_OPTS_USAGE("-s <address>", "source address");
+
+	FT_PRINT_OPTS_USAGE("-n <domain>", "domain name");
 	FT_PRINT_OPTS_USAGE("-f <provider>", "specific provider name eg sockets, verbs");
 	FT_PRINT_OPTS_USAGE("-e <ep_type>", "Endpoint type: msg|rdm|dgram (default:dgram)");
+
 	FT_PRINT_OPTS_USAGE("-I <number>", "number of iterations");
 	FT_PRINT_OPTS_USAGE("-S <size>", "specific transfer size or 'all'");
+
 	FT_PRINT_OPTS_USAGE("-h", "display this help output");
 
 	FT_PRINT_OPTS_USAGE("-v", "enables data_integrity checks");
 
 	return;
 }
-
 
 void ft_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 {
