@@ -191,16 +191,6 @@ struct ft_opts {
 	} while (0)
 
 
-char *ep_name(int ep_type) {
-	char *en;
-	switch(ep_type) {
-		case FI_EP_DGRAM:	en = "UDM"; break;
-		case FI_EP_RDM:		en = "RDM"; break;
-		case FI_EP_MSG:		en = "MSG"; break;
-		default:		en = "NOP"; break;
-	}
-	return en;
-}
 
 struct ct_pingpong {
 	struct fi_info *fi_pep, *fi, *hints;
@@ -291,6 +281,8 @@ static const int integ_alphabet_length = (sizeof(integ_alphabet)/sizeof(*integ_a
 /*                                       FT proto                                          */
 /*******************************************************************************************/
 
+char *ep_name(int ep_type);
+void ft_banner_info(struct ct_pingpong *ct);
 void ft_parseinfo(int op, char *optarg, struct fi_info *hints);
 void ft_parse_addr_opts(int op, char *optarg, struct ft_opts *opts);
 void ft_parsecsopts(int op, char *optarg, struct ft_opts *opts);
@@ -1559,7 +1551,6 @@ static int run_pingpong_dgram(struct ct_pingpong *ct)
 {
 	int i, ret;
 
-	fprintf(stderr, "Running pingpong test with DGRAM endpoint\n");
 
 	ret = ft_init_fabric(ct);
 	if (ret)
@@ -1570,6 +1561,8 @@ static int run_pingpong_dgram(struct ct_pingpong *ct)
 	 */
 	ret = fi_recv(ct->ep, ct->rx_buf, ct->rx_size, fi_mr_desc(ct->mr),
 			0, &ct->rx_ctx);
+
+	ft_banner_info(ct);
 
 	if (!(ct->opts.options & FT_OPT_SIZE)) {
 		for (i = 0; i < TEST_CNT; i++) {
@@ -1583,7 +1576,7 @@ static int run_pingpong_dgram(struct ct_pingpong *ct)
 					"Message size [%d] unsupported for endpoint %s "
 					"(maximum message size = %d)\n",
 					ct->opts.transfer_size,
-					ep_name(ct->hints->ep_attr->type),
+					ep_name(ct->fi->ep_attr->type),
 					(int) ct->fi->ep_attr->max_msg_size);
 				continue;
 			}
@@ -1607,16 +1600,24 @@ static int run_pingpong_rdm(struct ct_pingpong *ct)
 {
 	int i, ret = 0;
 
-	fprintf(stderr, "Running pingpong test with RDM endpoint\n");
-
 	ret = ft_init_fabric(ct);
 	if (ret)
 		return ret;
 
+	ft_banner_info(ct);
+
 	if (!(ct->opts.options & FT_OPT_SIZE)) {
 		for (i = 0; i < TEST_CNT; i++) {
 			if (!ft_use_size(i, ct->opts.sizes_enabled))
+			{
+				fprintf(stderr,
+					"Message size [%d] unsupported for endpoint %s "
+					"(maximum message size = %d)\n",
+					ct->opts.transfer_size,
+					ep_name(ct->fi->ep_attr->type),
+					(int) ct->fi->ep_attr->max_msg_size);
 				continue;
+			}
 			ct->opts.transfer_size = test_size[i].size;
 			init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
 			ret = pingpong(ct);
@@ -1637,8 +1638,6 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 {
 	int i, ret;
 
-	fprintf(stderr, "Running pingpong test with MSG endpoint\n");
-
 	if (!ct->opts.dst_addr) {
 		ret = ft_start_server(ct);
 		if (ret)
@@ -1650,10 +1649,20 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 		return ret;
 	}
 
+	ft_banner_info(ct);
+
 	if (!(ct->opts.options & FT_OPT_SIZE)) {
 		for (i = 0; i < TEST_CNT; i++) {
 			if (!ft_use_size(i, ct->opts.sizes_enabled))
+			{
+				fprintf(stderr,
+					"Message size [%d] unsupported for endpoint %s "
+					"(maximum message size = %d)\n",
+					ct->opts.transfer_size,
+					ep_name(ct->fi->ep_attr->type),
+					(int) ct->fi->ep_attr->max_msg_size);
 				continue;
+			}
 			ct->opts.transfer_size = test_size[i].size;
 			init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
 			ret = pingpong(ct);
@@ -1673,6 +1682,36 @@ out:
 	return ret;
 }
 
+char *ep_name(int ep_type) {
+	char *en;
+	switch(ep_type) {
+		case FI_EP_DGRAM:	en = "dgram"; break;
+		case FI_EP_RDM:		en = "rdm"; break;
+		case FI_EP_MSG:		en = "msg"; break;
+		default:		en = "none(error)"; break;
+	}
+	return en;
+}
+
+void ft_banner_info(struct ct_pingpong *ct)
+{
+	fprintf(stderr, "Running pingpong test with the %s endpoint trough a %s provider ...\n", ep_name(ct->fi->ep_attr->type), ct->fi->fabric_attr->prov_name);
+	fprintf(stderr, " * Fabric Attributes:\n");
+	fprintf(stderr, "  - %-20s : %s\n", "name", ct->fi->fabric_attr->name);
+	fprintf(stderr, "  - %-20s : %s\n", "prov_name", ct->fi->fabric_attr->prov_name);
+	fprintf(stderr, "  - %-20s : %"PRIu32"\n", "prov_version", ct->fi->fabric_attr->prov_version);
+	fprintf(stderr, " * Domain Attributes:\n");
+	fprintf(stderr, "  - %-20s : %s\n", "name", ct->fi->domain_attr->name);
+	fprintf(stderr, "  - %-20s : %zu\n", "cq_cnt", ct->fi->domain_attr->cq_cnt);
+	fprintf(stderr, "  - %-20s : %zu\n", "cq_data_size", ct->fi->domain_attr->cq_data_size);
+	fprintf(stderr, "  - %-20s : %zu\n", "ep_cnt", ct->fi->domain_attr->ep_cnt);
+	fprintf(stderr, " * Endpoint Attributes:\n");
+	fprintf(stderr, "  - %-20s : %s\n", "type", ep_name(ct->fi->ep_attr->type));
+	fprintf(stderr, "  - %-20s : %"PRIu32"\n", "protocol", ct->fi->ep_attr->protocol);
+	fprintf(stderr, "  - %-20s : %"PRIu32"\n", "protocol_version", ct->fi->ep_attr->protocol_version);
+	fprintf(stderr, "  - %-20s : %zu\n", "max_msg_size", ct->fi->ep_attr->max_msg_size);
+	fprintf(stderr, "  - %-20s : %zu\n", "max_order_raw_size", ct->fi->ep_attr->max_order_raw_size);
+}
 
 void ft_init_ct_pingpong(struct ct_pingpong *ct)
 {
