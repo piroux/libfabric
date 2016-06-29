@@ -28,7 +28,7 @@
  * SOFTWARE.
  */
 
-#  include <config.h>
+#include <config.h>
 
 #include <time.h>
 #include <unistd.h>
@@ -88,12 +88,12 @@ enum {
 
 
 struct ft_opts {
-	int iterations;
-	int transfer_size;
 	char *src_port;
 	char *dst_port;
 	char *src_addr;
 	char *dst_addr;
+	int iterations;
+	int transfer_size;
 	int sizes_enabled;
 	int options;
 	int argc;
@@ -138,16 +138,16 @@ struct ft_opts {
 	FT_ERR("cq_readerr: %s", fi_cq_strerror(cq, entry.prov_errno, \
 				entry.err_data, buf, len))
 
-#define FT_CLOSE_FID(fd)					\
-	do {							\
-		int ret;					\
-		if ((fd)) {					\
-			ret = fi_close(&(fd)->fid);		\
-			if (ret)				\
-				FT_ERR("fi_close (%d) fid %d",	\
+#define FT_CLOSE_FID(fd)						\
+	do {								\
+		int ret;						\
+		if ((fd)) {						\
+			ret = fi_close(&(fd)->fid);			\
+			if (ret)					\
+				FT_ERR("fi_close (%d) fid %d",		\
 					ret, (int) (fd)->fid.fclass);	\
-			fd = NULL;				\
-		}						\
+			fd = NULL;					\
+		}							\
 	} while (0)
 
 #define FT_CLOSEV_FID(fd, cnt)			\
@@ -195,11 +195,9 @@ struct ft_opts {
 struct ct_pingpong {
 	struct fi_info *fi_pep, *fi, *hints;
 	struct fid_fabric *fabric;
-	struct fid_wait *waitset;
 	struct fid_domain *domain;
-	struct fid_poll *pollset;
 	struct fid_pep *pep;
-	struct fid_ep *ep, *alias_ep;
+	struct fid_ep *ep;
 	struct fid_cq *txcq, *rxcq;
 	struct fid_mr *mr;
 	struct fid_av *av;
@@ -229,8 +227,6 @@ struct ct_pingpong {
 	struct fi_eq_attr eq_attr;
 	struct fi_cq_attr cq_attr;
 	struct ft_opts opts;
-
-	const unsigned int test_cnt;
 };
 
 #define FT_ENABLE_ALL		(~0)
@@ -283,11 +279,7 @@ static const int integ_alphabet_length = (sizeof(integ_alphabet)/sizeof(*integ_a
 
 char *ep_name(int ep_type);
 void ft_banner_info(struct ct_pingpong *ct);
-void ft_parseinfo(int op, char *optarg, struct fi_info *hints);
-void ft_parse_addr_opts(int op, char *optarg, struct ft_opts *opts);
-void ft_parsecsopts(int op, char *optarg, struct ft_opts *opts);
-void ft_usage(char *name, char *desc);
-void ft_csusage(char *name, char *desc);
+void ft_pingpong_pusage(char *name, char *desc);
 
 void ft_fill_buf(void *buf, int size);
 int ft_check_buf(void *buf, int size);
@@ -301,7 +293,6 @@ int ft_server_connect(struct ct_pingpong *ct);
 int ft_client_connect(struct ct_pingpong *ct);
 int ft_alloc_active_res(struct ct_pingpong *ct, struct fi_info *fi);
 int ft_init_ep(struct ct_pingpong *ct);
-int ft_init_alias_ep(struct ct_pingpong *ct, uint64_t flags);
 int ft_av_insert(struct fid_av *av, void *addr, size_t count, fi_addr_t *fi_addr,
 		uint64_t flags, void *context);
 int ft_init_av(struct ct_pingpong *ct);
@@ -335,8 +326,6 @@ char *size_str(char str[FT_STR_LEN], long long size);
 char *cnt_str(char str[FT_STR_LEN], long long cnt);
 int size_to_count(struct ct_pingpong *ct, int size);
 
-void ft_parse_benchmark_opts(struct ct_pingpong *ct, int op, char *optarg);
-void ft_benchmark_usage(void);
 int pingpong(struct ct_pingpong *ct);
 
 void ft_init_ct_pingpong(struct ct_pingpong *ct);
@@ -666,16 +655,13 @@ static void ft_close_fids(struct ct_pingpong *ct)
 {
 	if (ct->mr != &(ct->no_mr))
 		FT_CLOSE_FID(ct->mr);
-	FT_CLOSE_FID(ct->alias_ep);
 	FT_CLOSE_FID(ct->ep);
 	FT_CLOSE_FID(ct->pep);
-	FT_CLOSE_FID(ct->pollset);
 	FT_CLOSE_FID(ct->rxcq);
 	FT_CLOSE_FID(ct->txcq);
 	FT_CLOSE_FID(ct->av);
 	FT_CLOSE_FID(ct->eq);
 	FT_CLOSE_FID(ct->domain);
-	FT_CLOSE_FID(ct->waitset);
 	FT_CLOSE_FID(ct->fabric);
 }
 
@@ -789,14 +775,14 @@ void init_test(struct ct_pingpong *ct, struct ft_opts *opts, char *test_name, si
 				return ret;					\
 			}							\
 										\
-			timeout_save = ct->timeout;					\
-			ct->timeout = 0;						\
+			timeout_save = ct->timeout;				\
+			ct->timeout = 0;					\
 			rc = comp_fn(ct, seq);					\
 			if (rc && rc != -FI_EAGAIN) {				\
 				FT_ERR("Failed to get " op_str " completion");	\
 				return rc;					\
 			}							\
-			ct->timeout = timeout_save;					\
+			ct->timeout = timeout_save;				\
 		}								\
 		seq++;								\
 	} while (0)
@@ -1003,17 +989,6 @@ int ft_sync(struct ct_pingpong *ct)
 			}						\
 		}							\
 	} while (0)
-
-int ft_init_alias_ep(struct ct_pingpong *ct, uint64_t flags)
-{
-	int ret;
-	ret = fi_ep_alias(ct->ep, &(ct->alias_ep), flags);
-	if (ret) {
-		FT_PRINTERR("fi_ep_alias", ret);
-		return ret;
-	}
-	return 0;
-}
 
 int ft_init_ep(struct ct_pingpong *ct)
 {
@@ -1341,6 +1316,9 @@ void show_perf(char *name, int tsize, int iters, struct timespec *start,
 	long long bytes = (long long) iters * tsize * xfers_per_iter;
 	float usec_per_xfer;
 
+	if (iters == 0)
+		return;
+
 	if (name) {
 		if (header) {
 			printf("%-50s%-8s%-8s%-8s%8s %10s%13s%13s\n",
@@ -1373,28 +1351,7 @@ void show_perf(char *name, int tsize, int iters, struct timespec *start,
 		usec_per_xfer, 1.0/usec_per_xfer);
 }
 
-void ft_usage(char *name, char *desc)
-{
-	fprintf(stderr, "Usage:\n");
-	fprintf(stderr, "  %s [OPTIONS]\t\tstart server\n", name);
-	fprintf(stderr, "  %s [OPTIONS] <host>\tconnect to server\n", name);
-
-	if (desc)
-		fprintf(stderr, "\n%s\n", desc);
-
-	fprintf(stderr, "\nOptions:\n");
-	FT_PRINT_OPTS_USAGE("-n <domain>", "domain name");
-	FT_PRINT_OPTS_USAGE("-b <src_port>", "non default source port number");
-	FT_PRINT_OPTS_USAGE("-p <dst_port>", "non default destination port number");
-	FT_PRINT_OPTS_USAGE("-f <provider>", "specific provider name eg sockets, verbs");
-	FT_PRINT_OPTS_USAGE("-s <address>", "source address");
-	FT_PRINT_OPTS_USAGE("-a <address vector name>", "name of address vector");
-	FT_PRINT_OPTS_USAGE("-h", "display this help output");
-
-	return;
-}
-
-void ft_csusage(char *name, char *desc)
+void ft_pingpong_usage(char *name, char *desc)
 {
 	fprintf(stderr, "Usage:\n");
 	fprintf(stderr, "  %s [OPTIONS]\t\tstart server\n", name);
@@ -1464,6 +1421,8 @@ void ft_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 	case 'I':
 		ct->opts.options |= FT_OPT_ITER;
 		ct->opts.iterations = atoi(optarg);
+		if (ct->opts.iterations < 0)
+			ct->opts.iterations = 0;
 		break;
 	
 	/* Message Size */
@@ -1568,19 +1527,9 @@ static int run_pingpong_dgram(struct ct_pingpong *ct)
 		for (i = 0; i < TEST_CNT; i++) {
 			if (!ft_use_size(i, ct->opts.sizes_enabled))
 				continue;
-
 			ct->opts.transfer_size = test_size[i].size;
 			if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size)
-			{
-				fprintf(stderr,
-					"Message size [%d] unsupported for endpoint %s "
-					"(maximum message size = %d)\n",
-					ct->opts.transfer_size,
-					ep_name(ct->fi->ep_attr->type),
-					(int) ct->fi->ep_attr->max_msg_size);
 				continue;
-			}
-
 			init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
 			ret = pingpong(ct);
 			if (ret)
@@ -1609,15 +1558,7 @@ static int run_pingpong_rdm(struct ct_pingpong *ct)
 	if (!(ct->opts.options & FT_OPT_SIZE)) {
 		for (i = 0; i < TEST_CNT; i++) {
 			if (!ft_use_size(i, ct->opts.sizes_enabled))
-			{
-				fprintf(stderr,
-					"Message size [%d] unsupported for endpoint %s "
-					"(maximum message size = %d)\n",
-					ct->opts.transfer_size,
-					ep_name(ct->fi->ep_attr->type),
-					(int) ct->fi->ep_attr->max_msg_size);
 				continue;
-			}
 			ct->opts.transfer_size = test_size[i].size;
 			init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
 			ret = pingpong(ct);
@@ -1654,15 +1595,7 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 	if (!(ct->opts.options & FT_OPT_SIZE)) {
 		for (i = 0; i < TEST_CNT; i++) {
 			if (!ft_use_size(i, ct->opts.sizes_enabled))
-			{
-				fprintf(stderr,
-					"Message size [%d] unsupported for endpoint %s "
-					"(maximum message size = %d)\n",
-					ct->opts.transfer_size,
-					ep_name(ct->fi->ep_attr->type),
-					(int) ct->fi->ep_attr->max_msg_size);
 				continue;
-			}
 			ct->opts.transfer_size = test_size[i].size;
 			init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
 			ret = pingpong(ct);
@@ -1719,12 +1652,9 @@ void ft_init_ct_pingpong(struct ct_pingpong *ct)
 	ct->fi = NULL;
 	ct->hints = NULL;
 	ct->fabric = NULL;
-	ct->waitset = NULL;
 	ct->domain = NULL;
-	ct->pollset = NULL;
 	ct->pep = NULL;
 	ct->ep = NULL;
-	ct->alias_ep = NULL;
 	ct->txcq = NULL;
 	ct->rxcq = NULL;
 	ct->mr = NULL;
@@ -1795,7 +1725,7 @@ int main(int argc, char **argv)
 			break;
 		case '?':
 		case 'h':
-			ft_csusage(argv[0], "Ping pong client and server.");
+			ft_pingpong_usage(argv[0], "Ping pong client and server.");
 			return EXIT_FAILURE;
 		}
 	}
