@@ -77,13 +77,7 @@ enum {
 	FT_OPT_ACTIVE		= 1 << 0,
 	FT_OPT_ITER		= 1 << 1,
 	FT_OPT_SIZE		= 1 << 2,
-	FT_OPT_RX_CQ		= 1 << 3,
-	FT_OPT_TX_CQ		= 1 << 4,
-	FT_OPT_RX_CNTR		= 1 << 5,
-	FT_OPT_TX_CNTR		= 1 << 6,
-	FT_OPT_VERIFY_DATA	= 1 << 7,
-	FT_OPT_ALIGN		= 1 << 8,
-	FT_OPT_BW		= 1 << 9,
+	FT_OPT_VERIFY_DATA	= 1 << 3,
 };
 
 
@@ -106,7 +100,7 @@ struct ft_opts {
 #define BENCHMARK_OPTS "v"
 
 #define INIT_OPTS (struct ft_opts) \
-	{	.options = FT_OPT_RX_CQ | FT_OPT_TX_CQ, \
+	{	.options = 0, \
 		.iterations = 1000, \
 		.transfer_size = 1024, \
 		.sizes_enabled = FT_DEFAULT_SIZE, \
@@ -778,24 +772,20 @@ int ft_alloc_active_res(struct ct_pingpong *ct, struct fi_info *fi)
 		ct->cq_attr.format = FI_CQ_FORMAT_CONTEXT;
 	}
 
-	if (ct->opts.options & FT_OPT_TX_CQ) {
-		ct->cq_attr.wait_obj = FI_WAIT_NONE;
-		ct->cq_attr.size = fi->tx_attr->size;
-		ret = fi_cq_open(ct->domain, &(ct->cq_attr), &(ct->txcq), &(ct->txcq));
-		if (ret) {
-			FT_PRINTERR("fi_cq_open", ret);
-			return ret;
-		}
+	ct->cq_attr.wait_obj = FI_WAIT_NONE;
+	ct->cq_attr.size = fi->tx_attr->size;
+	ret = fi_cq_open(ct->domain, &(ct->cq_attr), &(ct->txcq), &(ct->txcq));
+	if (ret) {
+		FT_PRINTERR("fi_cq_open", ret);
+		return ret;
 	}
 
-	if (ct->opts.options & FT_OPT_RX_CQ) {
-		ct->cq_attr.wait_obj = FI_WAIT_NONE;
-		ct->cq_attr.size = fi->rx_attr->size;
-		ret = fi_cq_open(ct->domain, &(ct->cq_attr), &(ct->rxcq), &(ct->rxcq));
-		if (ret) {
-			FT_PRINTERR("fi_cq_open", ret);
-			return ret;
-		}
+	ct->cq_attr.wait_obj = FI_WAIT_NONE;
+	ct->cq_attr.size = fi->rx_attr->size;
+	ret = fi_cq_open(ct->domain, &(ct->cq_attr), &(ct->rxcq), &(ct->rxcq));
+	if (ret) {
+		FT_PRINTERR("fi_cq_open", ret);
+		return ret;
 	}
 
 	if (fi->ep_attr->type == FI_EP_RDM || fi->ep_attr->type == FI_EP_DGRAM) {
@@ -1024,11 +1014,11 @@ char *cnt_str(char str[FT_STR_LEN], long long cnt)
 int size_to_count(struct ct_pingpong *ct, int size)
 {
 	if (size >= (1 << 20))
-		return (ct->opts.options & FT_OPT_BW) ? 200 : 100;
+		return 100;
 	else if (size >= (1 << 16))
-		return (ct->opts.options & FT_OPT_BW) ? 2000 : 1000;
+		return 1000;
 	else
-		return (ct->opts.options & FT_OPT_BW) ? 20000: 10000;
+		return 10000;
 }
 
 void init_test(struct ct_pingpong *ct, struct ft_opts *opts, char *test_name, size_t test_name_len)
