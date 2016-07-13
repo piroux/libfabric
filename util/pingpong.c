@@ -124,11 +124,25 @@ struct ft_opts {
 			(int) retv, fi_strerror((int) -retv)); } while (0)
 
 #define FT_LOG(level, fmt, ...) \
-	do { fprintf(stderr, "[%s] fabtests:%s:%d: " fmt "\n", level, __FILE__, \
+	do { fprintf(stderr, "[%s] %s:%d: " fmt "\n", level, __FILE__, \
+			__LINE__, ##__VA_ARGS__); } while (0)
+
+#define FT_LOG_(level, fmt, ...) \
+	do { fprintf(stderr, "[%s] %s:%d: " fmt, level, __FILE__, \
 			__LINE__, ##__VA_ARGS__); } while (0)
 
 #define FT_ERR(fmt, ...) FT_LOG("error", fmt, ##__VA_ARGS__)
 #define FT_WARN(fmt, ...) FT_LOG("warn", fmt, ##__VA_ARGS__)
+
+int _activate_debug = 0;
+#define FT_ACTIVATE_DEBUG _activate_debug
+
+#define FT_DEBUG(fmt, ...)						\
+	do {								\
+		if (_activate_debug) {					\
+			FT_LOG_("debug", fmt, ##__VA_ARGS__);		\
+		}							\
+	} while (0)
 
 #define FT_EQ_ERR(eq, entry, buf, len) \
 	FT_ERR("eq_readerr: %s", fi_eq_strerror(eq, entry.prov_errno, \
@@ -366,14 +380,14 @@ int ft_ctrl_init(struct ct_pingpong  *ct)
 		}
 		ct->ctrl_addr.sin_port = htons(ct->ctrl_port);
 
-		fprintf(stderr, "CLIENT: connecting to <%s>\n", ct->opts.dst_addr);
+		FT_DEBUG("CLIENT: connecting to <%s>\n", ct->opts.dst_addr);
 		ret = connect(ct->ctrl_connfd, (struct sockaddr *)&ct->ctrl_addr, sizeof(ct->ctrl_addr));
 		if (ret == -1) {
 			err = errno;
 			FT_PRINTERR("connect", err);
 			return ret;
 		}
-		fprintf(stderr, "CLIENT: connected\n");
+		FT_DEBUG("CLIENT: connected\n");
 
 	} else {
 		ct->ctrl_listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -407,14 +421,14 @@ int ft_ctrl_init(struct ct_pingpong  *ct)
 			return ret;
 		}
 
-		fprintf(stderr, "SERVER: waiting for connection ...\n");
+		FT_DEBUG("SERVER: waiting for connection ...\n");
 		ct->ctrl_connfd = accept(ct->ctrl_listenfd, (struct sockaddr*)NULL, NULL);
 		if (ct->ctrl_connfd == -1) {
 			err = errno;
 			FT_PRINTERR("accept", err);
 			return ret;
 		}
-		fprintf(stderr, "SERVER: connection acquired\n");
+		FT_DEBUG("SERVER: connection acquired\n");
 	}
 
 	return 0;
@@ -430,12 +444,14 @@ int ft_ctrl_send(struct ct_pingpong *ct, char *buf, size_t size)
 		FT_PRINTERR("write", err);
 		return ret;
 	}
-	fprintf(stderr, "----> sent (%d/%ld) : \"", ret, size);
-	int i;
-	for (i = 0; i < size; i++) {
-		printf("%c.", buf[i]);
+	FT_DEBUG("----> sent (%d/%ld) : \"", ret, size);
+	if (FT_ACTIVATE_DEBUG) {
+		int i;
+		for (i = 0; i < size; i++) {
+			fprintf(stderr, "%c.", buf[i]);
+		}
+		fprintf(stderr,"\"\n");
 	}
-	printf("\"\n");
 
 	return ret;
 }
@@ -450,12 +466,14 @@ int ft_ctrl_recv(struct ct_pingpong *ct, char *buf, size_t size)
 		FT_PRINTERR("read", err);
 		return ret;
 	}
-	fprintf(stderr, "----> received (%d/%ld) : \"", ret, size);
-	int i;
-	for (i = 0; i < size; i++) {
-		printf("%c.", buf[i]);
+	FT_DEBUG("----> received (%d/%ld) : \"", ret, size);
+	if (FT_ACTIVATE_DEBUG) {
+		int i;
+		for (i = 0; i < size; i++) {
+			fprintf(stderr, "%c.", buf[i]);
+		}
+		fprintf(stderr, "\"\n");
 	}
-	printf("\"\n");
 
 	return ret;
 }
@@ -482,26 +500,26 @@ int ft_ctrl_txrx_data_port(struct ct_pingpong *ct)
 	if (ct->opts.dst_addr) {
 		memset(&ct->ctrl_buf, '\0', FT_MSG_LEN_PORT + 1);
 
-		fprintf(stderr, "CLIENT: receiving port ...\n");
+		FT_DEBUG("CLIENT: receiving port ...\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, FT_MSG_LEN_PORT);
 		if (ret <= 0)
 			return EXIT_FAILURE;
 		ct->data_default_port = atoi(ct->ctrl_buf);
-		fprintf(stderr, "CLIENT: received port = <%d> (len=%lu)\n", ct->data_default_port, strlen(ct->ctrl_buf));
+		FT_DEBUG("CLIENT: received port = <%d> (len=%lu)\n", ct->data_default_port, strlen(ct->ctrl_buf));
 
 		snprintf(ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK) , "%s", FT_MSG_CHECK_PORT_OK);
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK));
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "CLIENT: acked port to server\n");
+		FT_DEBUG("CLIENT: acked port to server\n");
 	} else {
 		snprintf(ct->ctrl_buf, FT_MSG_LEN_PORT + 1, "%d", ct->data_default_port);
 
-		fprintf(stderr, "SERVER: sending port = <%s> (len=%lu) ...\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+		FT_DEBUG("SERVER: sending port = <%s> (len=%lu) ...\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, FT_MSG_LEN_PORT);
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "SERVER: sent port\n");
+		FT_DEBUG("SERVER: sent port\n");
 
 		memset(&ct->ctrl_buf, '\0', sizeof(FT_MSG_CHECK_PORT_OK));
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK));
@@ -509,10 +527,10 @@ int ft_ctrl_txrx_data_port(struct ct_pingpong *ct)
 			return EXIT_FAILURE;
 
 		if (strcmp(ct->ctrl_buf, FT_MSG_CHECK_PORT_OK)) {
-			fprintf(stderr, "SERVER: error while client acking the port : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+			FT_DEBUG("SERVER: error while client acking the port : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 			return EXIT_FAILURE;
 		}
-		fprintf(stderr, "SERVER: port acked by client\n");
+		FT_DEBUG("SERVER: port acked by client\n");
 	}
 
 	snprintf(ct->data_port, sizeof(ct->data_port), "%d", ct->data_default_port);
@@ -527,29 +545,29 @@ int ft_ctrl_sync(struct ct_pingpong *ct)
 	if (ct->opts.dst_addr) {
 		snprintf(ct->ctrl_buf, sizeof(FT_MSG_SYNC_Q), "%s", FT_MSG_SYNC_Q);
 
-		fprintf(stderr, "CLIENT: syncing ...\n");
+		FT_DEBUG("CLIENT: syncing ...\n");
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_SYNC_Q));
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "CLIENT: syncing now\n");
+		FT_DEBUG("CLIENT: syncing now\n");
 
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_SYNC_A));
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "CLIENT: synced\n");
+		FT_DEBUG("CLIENT: synced\n");
 	} else {
-		fprintf(stderr, "SERVER: syncing ...\n");
+		FT_DEBUG("SERVER: syncing ...\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_SYNC_Q));
 		if (ret <= 0)
 			return EXIT_FAILURE;
 
-		fprintf(stderr, "SERVER: syncing now");
+		FT_DEBUG("SERVER: syncing now");
 		snprintf(ct->ctrl_buf, sizeof(FT_MSG_SYNC_A) , "%s", FT_MSG_SYNC_A);
 
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_SYNC_A));
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "SERVER: synced\n");
+		FT_DEBUG("SERVER: synced\n");
 	}
 
 	return 0;
@@ -563,36 +581,36 @@ int ft_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 		memset(&ct->ctrl_buf, '\0', FT_MSG_LEN_CNT + 1);
 		snprintf(ct->ctrl_buf, FT_MSG_LEN_CNT + 1, "%ld", ct->cnt_ack_msg);
 
-		fprintf(stderr, "CLIENT: sending count = <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+		FT_DEBUG("CLIENT: sending count = <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, FT_MSG_LEN_CNT);
 		if (ret <= 0 || ret < FT_MSG_LEN_CNT)
 			return EXIT_FAILURE;
-		fprintf(stderr, "CLIENT: sent count ...\n");
+		FT_DEBUG("CLIENT: sent count ...\n");
 
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_CNT_OK));
 		if (ret <= 0 || ret < sizeof(FT_MSG_CHECK_CNT_OK))
 			return EXIT_FAILURE;
 
 		if (strcmp(ct->ctrl_buf, FT_MSG_CHECK_CNT_OK)) {
-			fprintf(stderr, "CLIENT: error while server acking the count : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+			FT_DEBUG("CLIENT: error while server acking the count : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 			return EXIT_FAILURE;
 		}
-		fprintf(stderr, "CLIENT: count acked by server\n");
+		FT_DEBUG("CLIENT: count acked by server\n");
 	} else {
 		memset(&ct->ctrl_buf, '\0', FT_MSG_LEN_CNT + 1);
 
-		fprintf(stderr, "SERVER: receiving count ...\n");
+		FT_DEBUG("SERVER: receiving count ...\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, FT_MSG_LEN_CNT);
 		if (ret <= 0 || ret < FT_MSG_LEN_CNT)
 			return EXIT_FAILURE;
 		ct->cnt_ack_msg = atoi(ct->ctrl_buf);
-		fprintf(stderr, "SERVER: received count = <%ld> (len=%lu)\n", ct->cnt_ack_msg, strlen(ct->ctrl_buf));
+		FT_DEBUG("SERVER: received count = <%ld> (len=%lu)\n", ct->cnt_ack_msg, strlen(ct->ctrl_buf));
 
 		snprintf(ct->ctrl_buf, sizeof(FT_MSG_CHECK_CNT_OK), "%s", FT_MSG_CHECK_CNT_OK);
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_CNT_OK));
 		if (ret <= 0 || ret < sizeof(FT_MSG_CHECK_CNT_OK))
 			return EXIT_FAILURE;
-		fprintf(stderr, "SERVER: acked count to client\n");
+		FT_DEBUG("SERVER: acked count to client\n");
 	}
 
 	return 0;
@@ -1352,33 +1370,33 @@ int ft_init_av_(struct ct_pingpong *ct)
 			return ret;
 		}
 
-		fprintf(stderr, "CLIENT: sending av ...\n");
+		FT_DEBUG("CLIENT: sending av ...\n");
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, addrlen);
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "CLIENT: sent av ...\n");
+		FT_DEBUG("CLIENT: sent av ...\n");
 
-		fprintf(stderr, "CLIENT: waiting for acked av ....\n");
+		FT_DEBUG("CLIENT: waiting for acked av ....\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK));
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "CLIENT: av acked\n");
+		FT_DEBUG("CLIENT: av acked\n");
 	} else {
-		fprintf(stderr, "SERVER: receiving av ...\n");
+		FT_DEBUG("SERVER: receiving av ...\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, addrlen);
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "SERVER: received av\n");
+		FT_DEBUG("SERVER: received av\n");
 
 		ret = ft_av_insert(ct->av, (char *) ct->ctrl_buf, 1, &(ct->remote_fi_addr), 0, NULL);
 		if (ret)
 			return ret;
 
-		fprintf(stderr, "SERVER: acking av ....\n");
+		FT_DEBUG("SERVER: acking av ....\n");
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK));
 		if (ret <= 0)
 			return EXIT_FAILURE;
-		fprintf(stderr, "SERVER: acked av\n");
+		FT_DEBUG("SERVER: acked av\n");
 	}
 
 	return 0;
@@ -1958,22 +1976,22 @@ char *ep_name(int ep_type) {
 
 void ft_banner_info(struct ct_pingpong *ct)
 {
-	fprintf(stderr, "Running pingpong test with the %s endpoint trough a %s provider ...\n", ep_name(ct->fi->ep_attr->type), ct->fi->fabric_attr->prov_name);
-	fprintf(stderr, " * Fabric Attributes:\n");
-	fprintf(stderr, "  - %-20s : %s\n", "name", ct->fi->fabric_attr->name);
-	fprintf(stderr, "  - %-20s : %s\n", "prov_name", ct->fi->fabric_attr->prov_name);
-	fprintf(stderr, "  - %-20s : %"PRIu32"\n", "prov_version", ct->fi->fabric_attr->prov_version);
-	fprintf(stderr, " * Domain Attributes:\n");
-	fprintf(stderr, "  - %-20s : %s\n", "name", ct->fi->domain_attr->name);
-	fprintf(stderr, "  - %-20s : %zu\n", "cq_cnt", ct->fi->domain_attr->cq_cnt);
-	fprintf(stderr, "  - %-20s : %zu\n", "cq_data_size", ct->fi->domain_attr->cq_data_size);
-	fprintf(stderr, "  - %-20s : %zu\n", "ep_cnt", ct->fi->domain_attr->ep_cnt);
-	fprintf(stderr, " * Endpoint Attributes:\n");
-	fprintf(stderr, "  - %-20s : %s\n", "type", ep_name(ct->fi->ep_attr->type));
-	fprintf(stderr, "  - %-20s : %"PRIu32"\n", "protocol", ct->fi->ep_attr->protocol);
-	fprintf(stderr, "  - %-20s : %"PRIu32"\n", "protocol_version", ct->fi->ep_attr->protocol_version);
-	fprintf(stderr, "  - %-20s : %zu\n", "max_msg_size", ct->fi->ep_attr->max_msg_size);
-	fprintf(stderr, "  - %-20s : %zu\n", "max_order_raw_size", ct->fi->ep_attr->max_order_raw_size);
+	FT_DEBUG("Running pingpong test with the %s endpoint trough a %s provider ...\n", ep_name(ct->fi->ep_attr->type), ct->fi->fabric_attr->prov_name);
+	FT_DEBUG(" * Fabric Attributes:\n");
+	FT_DEBUG("  - %-20s : %s\n", "name", ct->fi->fabric_attr->name);
+	FT_DEBUG("  - %-20s : %s\n", "prov_name", ct->fi->fabric_attr->prov_name);
+	FT_DEBUG("  - %-20s : %"PRIu32"\n", "prov_version", ct->fi->fabric_attr->prov_version);
+	FT_DEBUG(" * Domain Attributes:\n");
+	FT_DEBUG("  - %-20s : %s\n", "name", ct->fi->domain_attr->name);
+	FT_DEBUG("  - %-20s : %zu\n", "cq_cnt", ct->fi->domain_attr->cq_cnt);
+	FT_DEBUG("  - %-20s : %zu\n", "cq_data_size", ct->fi->domain_attr->cq_data_size);
+	FT_DEBUG("  - %-20s : %zu\n", "ep_cnt", ct->fi->domain_attr->ep_cnt);
+	FT_DEBUG(" * Endpoint Attributes:\n");
+	FT_DEBUG("  - %-20s : %s\n", "type", ep_name(ct->fi->ep_attr->type));
+	FT_DEBUG("  - %-20s : %"PRIu32"\n", "protocol", ct->fi->ep_attr->protocol);
+	FT_DEBUG("  - %-20s : %"PRIu32"\n", "protocol_version", ct->fi->ep_attr->protocol_version);
+	FT_DEBUG("  - %-20s : %zu\n", "max_msg_size", ct->fi->ep_attr->max_msg_size);
+	FT_DEBUG("  - %-20s : %zu\n", "max_order_raw_size", ct->fi->ep_attr->max_order_raw_size);
 }
 
 void ft_init_ct_pingpong(struct ct_pingpong *ct)
@@ -2051,11 +2069,14 @@ int main(int argc, char **argv)
 	if (!ct.hints)
 		return EXIT_FAILURE;
 
-	while ((op = getopt(argc, argv, "h:" CS_OPTS INFO_OPTS BENCHMARK_OPTS)) !=
+	while ((op = getopt(argc, argv, "h:d" CS_OPTS INFO_OPTS BENCHMARK_OPTS)) !=
 			-1) {
 		switch (op) {
 		default:
 			ft_parse_opts(&ct, op, optarg);
+			break;
+		case 'd':
+			FT_ACTIVATE_DEBUG = 1;
 			break;
 		case '?':
 		case 'h':
