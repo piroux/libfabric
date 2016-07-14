@@ -308,7 +308,6 @@ TESTS = \
 	util/fi_info \
 	util/fi_pingpong
 
-
 test:
 	./util/fi_info
 	./util/fi_pingpong
