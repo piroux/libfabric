@@ -224,117 +224,92 @@ static const char integ_alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEF
 static const int integ_alphabet_length = (sizeof(integ_alphabet)/sizeof(*integ_alphabet)) - 1;
 
 /*******************************************************************************************/
-/*                                       FT proto                                          */
+/*                                         Utils                                           */
 /*******************************************************************************************/
 
-char *ep_name(int ep_type);
-void ft_banner_info(struct ct_pingpong *ct);
-void ft_pingpong_pusage(char *name, char *desc);
+long parse_ulong(char *str, long max) {
+	long ret;
+	char *end;
+	errno = 0;
 
-void ft_fill_buf(void *buf, int size);
-int ft_check_buf(void *buf, int size);
+	ret = strtol(str, &end, 10);
+	if (*end != '\0' || errno != 0) {
+		if (errno == 0)
+			ret = -EINVAL;
+		else
+			ret = -errno;
+		fprintf(stderr, "Error parsing \"%s\" : %s\n", str, strerror(-ret));
+		return ret;
+	}
 
-long parse_ulong(char *str, long max);
-
-uint64_t ft_init_cq_data(struct fi_info *info);
-int ft_open_fabric_res(struct ct_pingpong *ct);
-int ft_getinfo(struct ct_pingpong *ct, struct fi_info *hints, struct fi_info **info);
-int ft_init_fabric();
-int ft_start_server(struct ct_pingpong *ct);
-int ft_server_connect(struct ct_pingpong *ct);
-int ft_client_connect(struct ct_pingpong *ct);
-int ft_alloc_active_res(struct ct_pingpong *ct, struct fi_info *fi);
-int ft_init_ep(struct ct_pingpong *ct);
-int ft_av_insert(struct fid_av *av, void *addr, size_t count, fi_addr_t *fi_addr,
-		uint64_t flags, void *context);
-int ft_init_av(struct ct_pingpong *ct);
-void ft_free_res(struct ct_pingpong *ct);
-void init_test(struct ct_pingpong *ct, struct ft_opts *opts, char *test_name, size_t test_name_len);
-
-int ft_finalize(struct ct_pingpong *ct);
-
-ssize_t ft_post_rx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size, struct fi_context* ctx);
-ssize_t ft_post_tx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size, struct fi_context* ctx);
-ssize_t ft_rx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size);
-ssize_t ft_tx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size);
-ssize_t ft_inject(struct ct_pingpong *ct, struct fid_ep *ep, size_t size);
-
-int ft_cq_readerr(struct fid_cq *cq);
-int ft_get_rx_comp(struct ct_pingpong *ct, uint64_t total);
-int ft_get_tx_comp(struct ct_pingpong *ct, uint64_t total);
-
-void eq_readerr(struct fid_eq *eq);
-
-int64_t get_elapsed(const struct timespec *b, const struct timespec *a,
-		enum precision p);
-void show_perf(char *name, int tsize, int sent, int acked, struct timespec *start,
-		struct timespec *end, int xfers_per_iter);
-
-int ft_getsrcaddr(char *node, char *service, struct fi_info *hints);
-int ft_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struct fi_info *hints,
-		uint64_t *flags, struct ft_opts *opts);
-char *size_str(char str[FT_STR_LEN], long long size);
-char *cnt_str(char str[FT_STR_LEN], long long cnt);
-int size_to_count(struct ct_pingpong *ct, int size);
-
-int pingpong(struct ct_pingpong *ct);
-
-void ft_init_ct_pingpong(struct ct_pingpong *ct);
-
-/*******************************************************************************************/
-/*                                       FT func                                           */
-/*******************************************************************************************/
-
-int generate_test_sizes(struct ft_opts *opts, size_t provider_maximum, int **sizes_)
-{
-        int defaults[6] = {64, 256, 1024, 4096, 655616, 1048576};
-        int power_of_two;
-        int half_up;
-	int n = 0;
-	int *sizes = NULL;
-
-	sizes = NULL;
-
-        sizes = calloc(64, sizeof(*sizes));
-        if (sizes == NULL)
-                return 0;
-	*sizes_ = sizes;
-
-        if (opts->options & FT_OPT_SIZE) {
-                if (opts->transfer_size > provider_maximum)
-                        return 0;
-
-                sizes[0] = opts->transfer_size;
-		n = 1;
-        } else if (opts->sizes_enabled != FT_ENABLE_ALL) {
-                for (int i = 0; i < sizeof(defaults); i++) {
-                        if (defaults[i] > provider_maximum)
-                                break;
-
-                        sizes[i] = defaults[i];
-			n++;
-                }
-        } else {
-                for (int i = 0; i < 22; i++) {
-                        power_of_two = (1 << (i + 1));
-                        half_up = power_of_two + (power_of_two / 2);
-
-                        if (power_of_two > provider_maximum)
-                                break;
-
-                        sizes[i * 2] = power_of_two;
-			n++;
-
-                        if (half_up > provider_maximum)
-                                break;
-
-                        sizes[(i * 2) + 1] = half_up;
-			n++;
-                }
-        }
-
-        return n;
+	if ((ret < 0) || (max > 0 && ret > max)) {
+		ret = -ERANGE;
+		fprintf(stderr, "Error parsing \"%s\" : %s\n", str, strerror(-ret));
+		return -ERANGE;
+	}
+	return ret;
 }
+
+int ft_test_provider(struct ct_pingpong *ct, struct fi_info *hints)
+{
+	char *node = NULL, *service = NULL;
+	uint64_t flags = 0;
+	int ret;
+	struct fi_info *fi;
+
+	if (!ct->opts.dst_addr) {
+		flags = FI_SOURCE;
+		hints->src_addr = NULL;
+		hints->src_addrlen = 0;
+	} else {
+		hints->dest_addr = NULL;
+		hints->dest_addrlen = 0;
+	}
+
+	if (!hints->ep_attr->type)
+		hints->ep_attr->type = FI_EP_DGRAM;
+
+	ret = fi_getinfo(FT_FIVERSION, node, service, flags, hints, &fi);
+	if (ret) {
+		return 0;
+	}
+	return 1;
+}
+
+char *ep_name(int ep_type) {
+	char *en;
+	switch(ep_type) {
+		case FI_EP_DGRAM:	en = "dgram"; break;
+		case FI_EP_RDM:		en = "rdm"; break;
+		case FI_EP_MSG:		en = "msg"; break;
+		default:		en = "none(error)"; break;
+	}
+	return en;
+}
+
+void ft_banner_info(struct ct_pingpong *ct)
+{
+	FT_DEBUG("Running pingpong test with the %s endpoint trough a %s provider ...\n", ep_name(ct->fi->ep_attr->type), ct->fi->fabric_attr->prov_name);
+	FT_DEBUG(" * Fabric Attributes:\n");
+	FT_DEBUG("  - %-20s : %s\n", "name", ct->fi->fabric_attr->name);
+	FT_DEBUG("  - %-20s : %s\n", "prov_name", ct->fi->fabric_attr->prov_name);
+	FT_DEBUG("  - %-20s : %"PRIu32"\n", "prov_version", ct->fi->fabric_attr->prov_version);
+	FT_DEBUG(" * Domain Attributes:\n");
+	FT_DEBUG("  - %-20s : %s\n", "name", ct->fi->domain_attr->name);
+	FT_DEBUG("  - %-20s : %zu\n", "cq_cnt", ct->fi->domain_attr->cq_cnt);
+	FT_DEBUG("  - %-20s : %zu\n", "cq_data_size", ct->fi->domain_attr->cq_data_size);
+	FT_DEBUG("  - %-20s : %zu\n", "ep_cnt", ct->fi->domain_attr->ep_cnt);
+	FT_DEBUG(" * Endpoint Attributes:\n");
+	FT_DEBUG("  - %-20s : %s\n", "type", ep_name(ct->fi->ep_attr->type));
+	FT_DEBUG("  - %-20s : %"PRIu32"\n", "protocol", ct->fi->ep_attr->protocol);
+	FT_DEBUG("  - %-20s : %"PRIu32"\n", "protocol_version", ct->fi->ep_attr->protocol_version);
+	FT_DEBUG("  - %-20s : %zu\n", "max_msg_size", ct->fi->ep_attr->max_msg_size);
+	FT_DEBUG("  - %-20s : %zu\n", "max_order_raw_size", ct->fi->ep_attr->max_order_raw_size);
+}
+
+/*******************************************************************************************/
+/*                                   Control Messaging                                     */
+/*******************************************************************************************/
 
 int ft_ctrl_init(struct ct_pingpong  *ct)
 {
@@ -588,11 +563,9 @@ int ft_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 	return 0;
 }
 
-static inline int ft_use_size(int index, int enable_flags)
-{
-	return (enable_flags == FT_ENABLE_ALL) ||
-		(enable_flags & test_size[index].enable_flags);
-}
+/*******************************************************************************************/
+/*                                        Options                                          */
+/*******************************************************************************************/
 
 static inline void ft_start(struct ct_pingpong *ct)
 {
@@ -610,6 +583,10 @@ static int ft_check_opts(struct ct_pingpong *ct, uint64_t flags)
 {
 	return (ct->opts.options & flags) == flags;
 }
+
+/*******************************************************************************************/
+/*                                     Data verification                                   */
+/*******************************************************************************************/
 
 void ft_fill_buf(void *buf, int size)
 {
@@ -652,6 +629,508 @@ int ft_check_buf(void *buf, int size)
 	}
 
 	return 0;
+}
+
+/*******************************************************************************************/
+/*                                       Addresses handling                                */
+/*******************************************************************************************/
+
+static int dupaddr(void **dst_addr, size_t *dst_addrlen,
+		void *src_addr, size_t src_addrlen)
+{
+	*dst_addr = malloc(src_addrlen);
+	if (!*dst_addr) {
+		FT_ERR("address allocation failed");
+		return EAI_MEMORY;
+	}
+	*dst_addrlen = src_addrlen;
+	memcpy(*dst_addr, src_addr, src_addrlen);
+	return 0;
+}
+
+static int getaddr(char *node, char *service,
+			struct fi_info *hints, uint64_t flags)
+{
+	int ret;
+	struct fi_info *fi;
+
+	if (!node && !service) {
+		if (flags & FI_SOURCE) {
+			hints->src_addr = NULL;
+			hints->src_addrlen = 0;
+		} else {
+			hints->dest_addr = NULL;
+			hints->dest_addrlen = 0;
+		}
+		return 0;
+	}
+
+	ret = fi_getinfo(FT_FIVERSION, node, service, flags, hints, &fi);
+	if (ret) {
+		FT_PRINTERR("fi_getinfo", ret);
+		return ret;
+	}
+	hints->addr_format = fi->addr_format;
+
+	if (flags & FI_SOURCE) {
+		ret = dupaddr(&hints->src_addr, &hints->src_addrlen,
+				fi->src_addr, fi->src_addrlen);
+	} else {
+		ret = dupaddr(&hints->dest_addr, &hints->dest_addrlen,
+				fi->dest_addr, fi->dest_addrlen);
+	}
+
+	fi_freeinfo(fi);
+	return ret;
+}
+
+void eq_readerr(struct fid_eq *eq)
+{
+	struct fi_eq_err_entry eq_err;
+	int rd;
+
+	rd = fi_eq_readerr(eq, &eq_err, 0);
+	if (rd != sizeof(eq_err)) {
+		FT_PRINTERR("fi_eq_readerr", rd);
+	} else {
+		FT_ERR("eq_readerr: %s", fi_eq_strerror(eq, eq_err.prov_errno,
+					eq_err.err_data, NULL, 0));
+
+	}
+}
+
+void ft_process_eq_err(ssize_t rd, struct fid_eq *eq, const char *fn) {
+	if (rd == -FI_EAVAIL) {
+		eq_readerr(eq);
+	} else {
+		FT_PRINTERR(fn, rd);
+	}
+}
+
+int ft_getsrcaddr(char *node, char *service, struct fi_info *hints)
+{
+	return getaddr(node, service, hints, FI_SOURCE);
+}
+
+int ft_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struct fi_info *hints,
+		uint64_t *flags, struct ft_opts *opts)
+{
+	int ret;
+
+	if (opts->dst_addr) {
+		if (!opts->dst_port)
+			opts->dst_port = ct->data_port;
+
+		ret = ft_getsrcaddr(opts->src_addr, opts->src_port, hints);
+		if (ret)
+			return ret;
+		*node = opts->dst_addr;
+		*service = opts->dst_port;
+	} else {
+		if (!opts->src_port)
+			opts->src_port = ct->data_port;
+
+		*node = opts->src_addr;
+		*service = opts->src_port;
+		*flags = FI_SOURCE;
+	}
+
+	return 0;
+}
+
+/*******************************************************************************************/
+/*                                  	  Test sizes                                       */
+/*******************************************************************************************/
+
+int generate_test_sizes(struct ft_opts *opts, size_t provider_maximum, int **sizes_)
+{
+        int defaults[6] = {64, 256, 1024, 4096, 655616, 1048576};
+        int power_of_two;
+        int half_up;
+	int n = 0;
+	int *sizes = NULL;
+
+	sizes = NULL;
+
+        sizes = calloc(64, sizeof(*sizes));
+        if (sizes == NULL)
+                return 0;
+	*sizes_ = sizes;
+
+        if (opts->options & FT_OPT_SIZE) {
+                if (opts->transfer_size > provider_maximum)
+                        return 0;
+
+                sizes[0] = opts->transfer_size;
+		n = 1;
+        } else if (opts->sizes_enabled != FT_ENABLE_ALL) {
+                for (int i = 0; i < sizeof(defaults); i++) {
+                        if (defaults[i] > provider_maximum)
+                                break;
+
+                        sizes[i] = defaults[i];
+			n++;
+                }
+        } else {
+                for (int i = 0; i < 22; i++) {
+                        power_of_two = (1 << (i + 1));
+                        half_up = power_of_two + (power_of_two / 2);
+
+                        if (power_of_two > provider_maximum)
+                                break;
+
+                        sizes[i * 2] = power_of_two;
+			n++;
+
+                        if (half_up > provider_maximum)
+                                break;
+
+                        sizes[(i * 2) + 1] = half_up;
+			n++;
+                }
+        }
+
+        return n;
+}
+
+int size_to_count(struct ct_pingpong *ct, int size)
+{
+	if (size >= (1 << 20))
+		return 100;
+	else if (size >= (1 << 16))
+		return 1000;
+	else
+		return 10000;
+}
+
+/*******************************************************************************************/
+/*                                    Performance output                                   */
+/*******************************************************************************************/
+
+char *size_str(char str[FT_STR_LEN], long long size)
+{
+	long long base, fraction = 0;
+	char mag;
+
+	memset(str, '\0', FT_STR_LEN);
+
+	if (size >= (1 << 30)) {
+		base = 1 << 30;
+		mag = 'g';
+	} else if (size >= (1 << 20)) {
+		base = 1 << 20;
+		mag = 'm';
+	} else if (size >= (1 << 10)) {
+		base = 1 << 10;
+		mag = 'k';
+	} else {
+		base = 1;
+		mag = '\0';
+	}
+
+	if (size / base < 10)
+		fraction = (size % base) * 10 / base;
+
+	if (fraction)
+		snprintf(str, FT_STR_LEN, "%lld.%lld%c", size / base, fraction, mag);
+	else
+		snprintf(str, FT_STR_LEN, "%lld%c", size / base, mag);
+
+	return str;
+}
+
+char *cnt_str(char str[FT_STR_LEN], long long cnt)
+{
+	if (cnt >= 1000000000)
+		snprintf(str, FT_STR_LEN, "%lldb", cnt / 1000000000);
+	else if (cnt >= 1000000)
+		snprintf(str, FT_STR_LEN, "%lldm", cnt / 1000000);
+	else if (cnt >= 1000)
+		snprintf(str, FT_STR_LEN, "%lldk", cnt / 1000);
+	else
+		snprintf(str, FT_STR_LEN, "%lld", cnt);
+
+	return str;
+}
+
+int64_t get_elapsed(const struct timespec *b, const struct timespec *a,
+		    enum precision p)
+{
+	int64_t elapsed;
+
+	elapsed = difftime(a->tv_sec, b->tv_sec) * 1000 * 1000 * 1000;
+	elapsed += a->tv_nsec - b->tv_nsec;
+	return elapsed / p;
+}
+
+void show_perf(char *name, int tsize, int sent, int acked, struct timespec *start,
+		struct timespec *end, int xfers_per_iter)
+{
+	static int header = 1;
+	char str[FT_STR_LEN];
+	int64_t elapsed = get_elapsed(start, end, MICRO);
+	long long bytes = (long long) sent * tsize * xfers_per_iter;
+	float usec_per_xfer;
+
+	if (sent == 0)
+		return;
+
+	if (name) {
+		if (header) {
+			printf("%-50s%-8s%-8s%-9s%-8s%8s %10s%13s%13s\n",
+					"name", "bytes", "#sent", "#ack",
+					"total", "time", "MB/sec",
+					"usec/xfer", "Mxfers/sec");
+			header = 0;
+		}
+
+		printf("%-50s", name);
+	} else {
+		if (header) {
+			printf("%-8s%-8s%-9s%-8s%8s %10s%13s%13s\n",
+					"bytes", "#sent", "#ack", "total",
+					"time", "MB/sec", "usec/xfer",
+					"Mxfers/sec");
+			header = 0;
+		}
+	}
+
+	printf("%-8s", size_str(str, tsize));
+
+	printf("%-8s", cnt_str(str, sent));
+
+	if (sent == acked) {
+		printf("=%-8s", cnt_str(str, acked));
+	} else if (sent < acked) {
+		printf("-%-8s", cnt_str(str, abs(acked - sent)));
+	} else {
+		printf("+%-8s", cnt_str(str, abs(acked - sent)));
+	}
+
+	printf("%-8s", size_str(str, bytes));
+
+	usec_per_xfer = ((float)elapsed / sent / xfers_per_iter);
+	printf("%8.2fs%10.2f%11.2f%11.2f\n",
+		elapsed / 1000000.0, bytes / (1.0 * elapsed),
+		usec_per_xfer, 1.0/usec_per_xfer);
+}
+/*******************************************************************************************/
+/*                               	Data Messaging                                     */
+/*******************************************************************************************/
+
+int ft_cq_readerr(struct fid_cq *cq)
+{
+	struct fi_cq_err_entry cq_err;
+	int ret;
+
+	ret = fi_cq_readerr(cq, &cq_err, 0);
+	if (ret < 0) {
+		FT_PRINTERR("fi_cq_readerr", ret);
+	} else {
+		FT_ERR("cq_readerr: %s", fi_cq_strerror(cq, cq_err.prov_errno,
+					cq_err.err_data, NULL, 0));
+		ret = -cq_err.err;
+	}
+	return ret;
+}
+
+/*
+ * fi_cq_err_entry can be cast to any CQ entry format.
+ */
+static int ft_spin_for_comp(struct fid_cq *cq, uint64_t *cur,
+			    uint64_t total, int timeout)
+{
+	struct fi_cq_err_entry comp;
+	struct timespec a, b;
+	int ret;
+
+	if (timeout >= 0)
+		clock_gettime(CLOCK_MONOTONIC, &a);
+
+	while (total - *cur > 0) {
+		ret = fi_cq_read(cq, &comp, 1);
+		if (ret > 0) {
+			if (timeout >= 0)
+				clock_gettime(CLOCK_MONOTONIC, &a);
+
+			(*cur)++;
+		} else if (ret < 0 && ret != -FI_EAGAIN) {
+			return ret;
+		} else if (timeout >= 0) {
+			clock_gettime(CLOCK_MONOTONIC, &b);
+			if ((b.tv_sec - a.tv_sec) > timeout) {
+				fprintf(stderr, "%ds timeout expired\n", timeout);
+				return -FI_ENODATA;
+			}
+		}
+	}
+
+	return 0;
+}
+
+static int ft_get_cq_comp(struct fid_cq *cq, uint64_t *cur,
+			  uint64_t total, int timeout)
+{
+	int ret = ft_spin_for_comp(cq, cur, total, timeout);
+
+	if (ret) {
+		if (ret == -FI_EAVAIL) {
+			ret = ft_cq_readerr(cq);
+			(*cur)++;
+		} else {
+			FT_PRINTERR("ft_get_cq_comp", ret);
+		}
+	}
+	return ret;
+}
+
+int ft_get_rx_comp(struct ct_pingpong *ct, uint64_t total)
+{
+	int ret = FI_SUCCESS;
+
+	if (ct->rxcq) {
+		ret = ft_get_cq_comp(ct->rxcq, &(ct->rx_cq_cntr), total, ct->timeout);
+	} else {
+		FT_ERR("Trying to get a RX completion when no RX CQ was opened");
+		ret = -FI_EOTHER;
+	}
+	return ret;
+}
+
+int ft_get_tx_comp(struct ct_pingpong *ct, uint64_t total)
+{
+	int ret;
+
+	if (ct->txcq) {
+		ret = ft_get_cq_comp(ct->txcq, &(ct->tx_cq_cntr), total, -1);
+	} else {
+		FT_ERR("Trying to get a TX completion when no TX CQ was opened");
+		ret = -FI_EOTHER;
+	}
+	return ret;
+}
+
+#define FT_POST(post_fn, comp_fn, seq, op_str, ...)				\
+	do {									\
+		int timeout_save;						\
+		int ret, rc;							\
+										\
+		while (1) {							\
+			ret = post_fn(__VA_ARGS__);				\
+			if (!ret)						\
+				break;						\
+										\
+			if (ret != -FI_EAGAIN) {				\
+				FT_PRINTERR(op_str, ret);			\
+				return ret;					\
+			}							\
+										\
+			timeout_save = ct->timeout;				\
+			ct->timeout = 0;					\
+			rc = comp_fn(ct, seq);					\
+			if (rc && rc != -FI_EAGAIN) {				\
+				FT_ERR("Failed to get " op_str " completion");	\
+				return rc;					\
+			}							\
+			ct->timeout = timeout_save;				\
+		}								\
+		seq++;								\
+	} while (0)
+
+ssize_t ft_post_tx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size, struct fi_context* ctx)
+{
+	FT_POST(fi_send, ft_get_tx_comp, ct->tx_seq, "transmit", ep,
+			ct->tx_buf,	size, fi_mr_desc(ct->mr),
+			ct->remote_fi_addr, ctx);
+	return 0;
+}
+
+ssize_t ft_tx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
+{
+	ssize_t ret;
+
+	if (ft_check_opts(ct, FT_OPT_VERIFY_DATA | FT_OPT_ACTIVE))
+		ft_fill_buf((char *) ct->tx_buf, size);
+
+	ret = ft_post_tx(ct, ep, size, &(ct->tx_ctx));
+	if (ret)
+		return ret;
+
+	ret = ft_get_tx_comp(ct, ct->tx_seq);
+	return ret;
+}
+
+ssize_t ft_post_inject(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
+{
+	FT_POST(fi_inject, ft_get_tx_comp, ct->tx_seq, "inject",
+			ep, ct->tx_buf, size,
+			ct->remote_fi_addr);
+	ct->tx_cq_cntr++;
+	return 0;
+}
+
+ssize_t ft_inject(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
+{
+	ssize_t ret;
+
+	if (ft_check_opts(ct, FT_OPT_VERIFY_DATA | FT_OPT_ACTIVE))
+		ft_fill_buf((char *) ct->tx_buf, size);
+
+	ret = ft_post_inject(ct, ep, size);
+	if (ret)
+		return ret;
+
+	return ret;
+}
+
+ssize_t ft_post_rx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size, struct fi_context* ctx)
+{
+	FT_POST(fi_recv, ft_get_rx_comp, ct->rx_seq, "receive", ep, ct->rx_buf,
+			MAX(size, FT_MAX_CTRL_MSG),
+			fi_mr_desc(ct->mr),	0, ctx);
+	return 0;
+}
+
+ssize_t ft_rx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
+{
+	ssize_t ret;
+
+	ret = ft_get_rx_comp(ct, ct->rx_seq);
+	if (ret)
+		return ret;
+
+	if (ft_check_opts(ct, FT_OPT_VERIFY_DATA | FT_OPT_ACTIVE)) {
+		ret = ft_check_buf((char *) ct->rx_buf, size);
+		if (ret)
+			return ret;
+	}
+	/* TODO: verify CQ data, if available */
+
+	/* Ignore the size arg. Post a buffer large enough to handle all message
+	 * sizes. ft_sync() makes use of ft_rx() and gets called in tests just before
+	 * message size is updated. The recvs posted are always for the next incoming
+	 * message */
+	ret = ft_post_rx(ct, ct->ep, ct->rx_size, &(ct->rx_ctx));
+	if (!ret)
+		ct->cnt_ack_msg++;
+	return ret;
+}
+
+/*******************************************************************************************/
+/*                                Initialization and allocations                          */
+/*******************************************************************************************/
+
+void init_test(struct ct_pingpong *ct, struct ft_opts *opts, char *test_name, size_t test_name_len)
+{
+	char sstr[FT_STR_LEN];
+
+	size_str(sstr, opts->transfer_size);
+	if (!strcmp(test_name, "custom"))
+		snprintf(test_name, test_name_len, "%s_lat", sstr);
+	if (!(opts->options & FT_OPT_ITER))
+		opts->iterations = size_to_count(ct, opts->transfer_size);
+
+	ct->cnt_ack_msg = 0;
 }
 
 uint64_t ft_init_cq_data(struct fi_info *info)
@@ -788,127 +1267,6 @@ int ft_alloc_active_res(struct ct_pingpong *ct, struct fi_info *fi)
 	return 0;
 }
 
-static int dupaddr(void **dst_addr, size_t *dst_addrlen,
-		void *src_addr, size_t src_addrlen)
-{
-	*dst_addr = malloc(src_addrlen);
-	if (!*dst_addr) {
-		FT_ERR("address allocation failed");
-		return EAI_MEMORY;
-	}
-	*dst_addrlen = src_addrlen;
-	memcpy(*dst_addr, src_addr, src_addrlen);
-	return 0;
-}
-
-static int getaddr(char *node, char *service,
-			struct fi_info *hints, uint64_t flags)
-{
-	int ret;
-	struct fi_info *fi;
-
-	if (!node && !service) {
-		if (flags & FI_SOURCE) {
-			hints->src_addr = NULL;
-			hints->src_addrlen = 0;
-		} else {
-			hints->dest_addr = NULL;
-			hints->dest_addrlen = 0;
-		}
-		return 0;
-	}
-
-	ret = fi_getinfo(FT_FIVERSION, node, service, flags, hints, &fi);
-	if (ret) {
-		FT_PRINTERR("fi_getinfo", ret);
-		return ret;
-	}
-	hints->addr_format = fi->addr_format;
-
-	if (flags & FI_SOURCE) {
-		ret = dupaddr(&hints->src_addr, &hints->src_addrlen,
-				fi->src_addr, fi->src_addrlen);
-	} else {
-		ret = dupaddr(&hints->dest_addr, &hints->dest_addrlen,
-				fi->dest_addr, fi->dest_addrlen);
-	}
-
-	fi_freeinfo(fi);
-	return ret;
-}
-
-void eq_readerr(struct fid_eq *eq)
-{
-	struct fi_eq_err_entry eq_err;
-	int rd;
-
-	rd = fi_eq_readerr(eq, &eq_err, 0);
-	if (rd != sizeof(eq_err)) {
-		FT_PRINTERR("fi_eq_readerr", rd);
-	} else {
-		FT_ERR("eq_readerr: %s", fi_eq_strerror(eq, eq_err.prov_errno,
-					eq_err.err_data, NULL, 0));
-
-	}
-}
-
-int ft_getsrcaddr(char *node, char *service, struct fi_info *hints)
-{
-	return getaddr(node, service, hints, FI_SOURCE);
-}
-
-int ft_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struct fi_info *hints,
-		uint64_t *flags, struct ft_opts *opts)
-{
-	int ret;
-
-	if (opts->dst_addr) {
-		if (!opts->dst_port)
-			opts->dst_port = ct->data_port;
-
-		ret = ft_getsrcaddr(opts->src_addr, opts->src_port, hints);
-		if (ret)
-			return ret;
-		*node = opts->dst_addr;
-		*service = opts->dst_port;
-	} else {
-		if (!opts->src_port)
-			opts->src_port = ct->data_port;
-
-		*node = opts->src_addr;
-		*service = opts->src_port;
-		*flags = FI_SOURCE;
-	}
-
-	return 0;
-}
-
-int ft_test_provider(struct ct_pingpong *ct, struct fi_info *hints)
-{
-	char *node = NULL, *service = NULL;
-	uint64_t flags = 0;
-	int ret;
-	struct fi_info *fi;
-
-	if (!ct->opts.dst_addr) {
-		flags = FI_SOURCE;
-		hints->src_addr = NULL;
-		hints->src_addrlen = 0;
-	} else {
-		hints->dest_addr = NULL;
-		hints->dest_addrlen = 0;
-	}
-
-	if (!hints->ep_attr->type)
-		hints->ep_attr->type = FI_EP_DGRAM;
-
-	ret = fi_getinfo(FT_FIVERSION, node, service, flags, hints, &fi);
-	if (ret) {
-		return 0;
-	}
-	return 1;
-}
-
 int ft_getinfo(struct ct_pingpong *ct, struct fi_info *hints, struct fi_info **info)
 {
 	char *node, *service;
@@ -928,345 +1286,6 @@ int ft_getinfo(struct ct_pingpong *ct, struct fi_info *hints, struct fi_info **i
 		return ret;
 	}
 	return 0;
-}
-
-static void ft_close_fids(struct ct_pingpong *ct)
-{
-	if (ct->mr != &(ct->no_mr))
-		FT_CLOSE_FID(ct->mr);
-	FT_CLOSE_FID(ct->ep);
-	FT_CLOSE_FID(ct->pep);
-	FT_CLOSE_FID(ct->rxcq);
-	FT_CLOSE_FID(ct->txcq);
-	FT_CLOSE_FID(ct->av);
-	FT_CLOSE_FID(ct->eq);
-	FT_CLOSE_FID(ct->domain);
-	FT_CLOSE_FID(ct->fabric);
-}
-
-void ft_free_res(struct ct_pingpong *ct)
-{
-	ft_close_fids(ct);
-	if (ct->ctx_arr) {
-		free(ct->ctx_arr);
-		ct->ctx_arr = NULL;
-	}
-
-	if (ct->buf) {
-		free(ct->buf);
-		ct->buf = ct->rx_buf = ct->tx_buf = NULL;
-		ct->buf_size = ct->rx_size = ct->tx_size = 0;
-	}
-	if (ct->fi_pep) {
-		fi_freeinfo(ct->fi_pep);
-		ct->fi_pep = NULL;
-	}
-	if (ct->fi) {
-		fi_freeinfo(ct->fi);
-		ct->fi = NULL;
-	}
-	if (ct->hints) {
-		fi_freeinfo(ct->hints);
-		ct->hints = NULL;
-	}
-}
-
-void ft_process_eq_err(ssize_t rd, struct fid_eq *eq, const char *fn) {
-	if (rd == -FI_EAVAIL) {
-		eq_readerr(eq);
-	} else {
-		FT_PRINTERR(fn, rd);
-	}
-}
-
-long parse_ulong(char *str, long max) {
-	long ret;
-	char *end;
-	errno = 0;
-
-	ret = strtol(str, &end, 10);
-	if (*end != '\0' || errno != 0) {
-		if (errno == 0)
-			ret = -EINVAL;
-		else
-			ret = -errno;
-		fprintf(stderr, "Error parsing \"%s\" : %s\n", str, strerror(-ret));
-		return ret;
-	}
-
-	if ((ret < 0) || (max > 0 && ret > max)) {
-		ret = -ERANGE;
-		fprintf(stderr, "Error parsing \"%s\" : %s\n", str, strerror(-ret));
-		return -ERANGE;
-	}
-	return ret;
-}
-
-char *size_str(char str[FT_STR_LEN], long long size)
-{
-	long long base, fraction = 0;
-	char mag;
-
-	memset(str, '\0', FT_STR_LEN);
-
-	if (size >= (1 << 30)) {
-		base = 1 << 30;
-		mag = 'g';
-	} else if (size >= (1 << 20)) {
-		base = 1 << 20;
-		mag = 'm';
-	} else if (size >= (1 << 10)) {
-		base = 1 << 10;
-		mag = 'k';
-	} else {
-		base = 1;
-		mag = '\0';
-	}
-
-	if (size / base < 10)
-		fraction = (size % base) * 10 / base;
-
-	if (fraction)
-		snprintf(str, FT_STR_LEN, "%lld.%lld%c", size / base, fraction, mag);
-	else
-		snprintf(str, FT_STR_LEN, "%lld%c", size / base, mag);
-
-	return str;
-}
-
-char *cnt_str(char str[FT_STR_LEN], long long cnt)
-{
-	if (cnt >= 1000000000)
-		snprintf(str, FT_STR_LEN, "%lldb", cnt / 1000000000);
-	else if (cnt >= 1000000)
-		snprintf(str, FT_STR_LEN, "%lldm", cnt / 1000000);
-	else if (cnt >= 1000)
-		snprintf(str, FT_STR_LEN, "%lldk", cnt / 1000);
-	else
-		snprintf(str, FT_STR_LEN, "%lld", cnt);
-
-	return str;
-}
-
-int size_to_count(struct ct_pingpong *ct, int size)
-{
-	if (size >= (1 << 20))
-		return 100;
-	else if (size >= (1 << 16))
-		return 1000;
-	else
-		return 10000;
-}
-
-void init_test(struct ct_pingpong *ct, struct ft_opts *opts, char *test_name, size_t test_name_len)
-{
-	char sstr[FT_STR_LEN];
-
-	size_str(sstr, opts->transfer_size);
-	if (!strcmp(test_name, "custom"))
-		snprintf(test_name, test_name_len, "%s_lat", sstr);
-	if (!(opts->options & FT_OPT_ITER))
-		opts->iterations = size_to_count(ct, opts->transfer_size);
-
-	ct->cnt_ack_msg = 0;
-}
-
-#define FT_POST(post_fn, comp_fn, seq, op_str, ...)				\
-	do {									\
-		int timeout_save;						\
-		int ret, rc;							\
-										\
-		while (1) {							\
-			ret = post_fn(__VA_ARGS__);				\
-			if (!ret)						\
-				break;						\
-										\
-			if (ret != -FI_EAGAIN) {				\
-				FT_PRINTERR(op_str, ret);			\
-				return ret;					\
-			}							\
-										\
-			timeout_save = ct->timeout;				\
-			ct->timeout = 0;					\
-			rc = comp_fn(ct, seq);					\
-			if (rc && rc != -FI_EAGAIN) {				\
-				FT_ERR("Failed to get " op_str " completion");	\
-				return rc;					\
-			}							\
-			ct->timeout = timeout_save;				\
-		}								\
-		seq++;								\
-	} while (0)
-
-ssize_t ft_post_tx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size, struct fi_context* ctx)
-{
-	FT_POST(fi_send, ft_get_tx_comp, ct->tx_seq, "transmit", ep,
-			ct->tx_buf,	size, fi_mr_desc(ct->mr),
-			ct->remote_fi_addr, ctx);
-	return 0;
-}
-
-ssize_t ft_tx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
-{
-	ssize_t ret;
-
-	if (ft_check_opts(ct, FT_OPT_VERIFY_DATA | FT_OPT_ACTIVE))
-		ft_fill_buf((char *) ct->tx_buf, size);
-
-	ret = ft_post_tx(ct, ep, size, &(ct->tx_ctx));
-	if (ret)
-		return ret;
-
-	ret = ft_get_tx_comp(ct, ct->tx_seq);
-	return ret;
-}
-
-ssize_t ft_post_inject(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
-{
-	FT_POST(fi_inject, ft_get_tx_comp, ct->tx_seq, "inject",
-			ep, ct->tx_buf, size,
-			ct->remote_fi_addr);
-	ct->tx_cq_cntr++;
-	return 0;
-}
-
-ssize_t ft_inject(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
-{
-	ssize_t ret;
-
-	if (ft_check_opts(ct, FT_OPT_VERIFY_DATA | FT_OPT_ACTIVE))
-		ft_fill_buf((char *) ct->tx_buf, size);
-
-	ret = ft_post_inject(ct, ep, size);
-	if (ret)
-		return ret;
-
-	return ret;
-}
-
-ssize_t ft_post_rx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size, struct fi_context* ctx)
-{
-	FT_POST(fi_recv, ft_get_rx_comp, ct->rx_seq, "receive", ep, ct->rx_buf,
-			MAX(size, FT_MAX_CTRL_MSG),
-			fi_mr_desc(ct->mr),	0, ctx);
-	return 0;
-}
-
-ssize_t ft_rx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
-{
-	ssize_t ret;
-
-	ret = ft_get_rx_comp(ct, ct->rx_seq);
-	if (ret)
-		return ret;
-
-	if (ft_check_opts(ct, FT_OPT_VERIFY_DATA | FT_OPT_ACTIVE)) {
-		ret = ft_check_buf((char *) ct->rx_buf, size);
-		if (ret)
-			return ret;
-	}
-	/* TODO: verify CQ data, if available */
-
-	/* Ignore the size arg. Post a buffer large enough to handle all message
-	 * sizes. ft_sync() makes use of ft_rx() and gets called in tests just before
-	 * message size is updated. The recvs posted are always for the next incoming
-	 * message */
-	ret = ft_post_rx(ct, ct->ep, ct->rx_size, &(ct->rx_ctx));
-	if (!ret)
-		ct->cnt_ack_msg++;
-	return ret;
-}
-
-/*
- * fi_cq_err_entry can be cast to any CQ entry format.
- */
-static int ft_spin_for_comp(struct fid_cq *cq, uint64_t *cur,
-			    uint64_t total, int timeout)
-{
-	struct fi_cq_err_entry comp;
-	struct timespec a, b;
-	int ret;
-
-	if (timeout >= 0)
-		clock_gettime(CLOCK_MONOTONIC, &a);
-
-	while (total - *cur > 0) {
-		ret = fi_cq_read(cq, &comp, 1);
-		if (ret > 0) {
-			if (timeout >= 0)
-				clock_gettime(CLOCK_MONOTONIC, &a);
-
-			(*cur)++;
-		} else if (ret < 0 && ret != -FI_EAGAIN) {
-			return ret;
-		} else if (timeout >= 0) {
-			clock_gettime(CLOCK_MONOTONIC, &b);
-			if ((b.tv_sec - a.tv_sec) > timeout) {
-				fprintf(stderr, "%ds timeout expired\n", timeout);
-				return -FI_ENODATA;
-			}
-		}
-	}
-
-	return 0;
-}
-
-static int ft_get_cq_comp(struct fid_cq *cq, uint64_t *cur,
-			  uint64_t total, int timeout)
-{
-	int ret = ft_spin_for_comp(cq, cur, total, timeout);
-
-	if (ret) {
-		if (ret == -FI_EAVAIL) {
-			ret = ft_cq_readerr(cq);
-			(*cur)++;
-		} else {
-			FT_PRINTERR("ft_get_cq_comp", ret);
-		}
-	}
-	return ret;
-}
-
-int ft_get_rx_comp(struct ct_pingpong *ct, uint64_t total)
-{
-	int ret = FI_SUCCESS;
-
-	if (ct->rxcq) {
-		ret = ft_get_cq_comp(ct->rxcq, &(ct->rx_cq_cntr), total, ct->timeout);
-	} else {
-		FT_ERR("Trying to get a RX completion when no RX CQ was opened");
-		ret = -FI_EOTHER;
-	}
-	return ret;
-}
-
-int ft_get_tx_comp(struct ct_pingpong *ct, uint64_t total)
-{
-	int ret;
-
-	if (ct->txcq) {
-		ret = ft_get_cq_comp(ct->txcq, &(ct->tx_cq_cntr), total, -1);
-	} else {
-		FT_ERR("Trying to get a TX completion when no TX CQ was opened");
-		ret = -FI_EOTHER;
-	}
-	return ret;
-}
-
-int ft_cq_readerr(struct fid_cq *cq)
-{
-	struct fi_cq_err_entry cq_err;
-	int ret;
-
-	ret = fi_cq_readerr(cq, &cq_err, 0);
-	if (ret < 0) {
-		FT_PRINTERR("fi_cq_readerr", ret);
-	} else {
-		FT_ERR("cq_readerr: %s", fi_cq_strerror(cq, cq_err.prov_errno,
-					cq_err.err_data, NULL, 0));
-		ret = -cq_err.err;
-	}
-	return ret;
 }
 
 #define FT_EP_BIND(ep, fd, flags)					\
@@ -1583,6 +1602,110 @@ int ft_init_fabric(struct ct_pingpong *ct)
 	return 0;
 }
 
+void ft_init_ct_pingpong(struct ct_pingpong *ct)
+{
+	ct->fi_pep = NULL;
+	ct->fi = NULL;
+	ct->hints = NULL;
+	ct->fabric = NULL;
+	ct->domain = NULL;
+	ct->pep = NULL;
+	ct->ep = NULL;
+	ct->txcq = NULL;
+	ct->rxcq = NULL;
+	ct->mr = NULL;
+	ct->av = NULL;
+	ct->eq = NULL;
+
+	ct->ctx_arr = NULL;
+	ct->remote_cq_data = 0;
+
+	ct->tx_seq = 0;
+	ct->rx_seq = 0;
+	ct->tx_cq_cntr = 0;
+	ct->rx_cq_cntr = 0;
+
+	ct->ft_parent_proc = 0;
+	ct->ft_child_pid = 0;
+
+	ct->remote_fi_addr = FI_ADDR_UNSPEC;
+	ct->buf = NULL;
+	ct->tx_buf = NULL;
+	ct->rx_buf = NULL;
+
+	ct->buf_size = 0;
+	ct->tx_size = 0;
+	ct->rx_size = 0;
+	ct->rx_fd = -1;
+	ct->tx_fd = -1;
+
+	strncpy(ct->test_name, "custom", 50);
+	ct->timeout = -1;
+
+	ct->av_attr = (struct fi_av_attr) {
+		.type = FI_AV_MAP,
+		.count = 1
+	};
+	ct->eq_attr = (struct fi_eq_attr) {
+		.wait_obj = FI_WAIT_UNSPEC
+	};
+	ct->cq_attr = (struct fi_cq_attr) {
+		.wait_obj = FI_WAIT_NONE
+	};
+
+	ct->ctrl_listenfd = -1;
+	ct->ctrl_connfd = -1;
+	ct->data_default_port = 9228;
+	ct->ctrl_port = 47592;
+
+	memset(ct->ctrl_buf, '\0', sizeof(ct->ctrl_buf));
+}
+
+/*******************************************************************************************/
+/*                                Deallocations and Final                                  */
+/*******************************************************************************************/
+
+static void ft_close_fids(struct ct_pingpong *ct)
+{
+	if (ct->mr != &(ct->no_mr))
+		FT_CLOSE_FID(ct->mr);
+	FT_CLOSE_FID(ct->ep);
+	FT_CLOSE_FID(ct->pep);
+	FT_CLOSE_FID(ct->rxcq);
+	FT_CLOSE_FID(ct->txcq);
+	FT_CLOSE_FID(ct->av);
+	FT_CLOSE_FID(ct->eq);
+	FT_CLOSE_FID(ct->domain);
+	FT_CLOSE_FID(ct->fabric);
+}
+
+void ft_free_res(struct ct_pingpong *ct)
+{
+	ft_close_fids(ct);
+	if (ct->ctx_arr) {
+		free(ct->ctx_arr);
+		ct->ctx_arr = NULL;
+	}
+
+	if (ct->buf) {
+		free(ct->buf);
+		ct->buf = ct->rx_buf = ct->tx_buf = NULL;
+		ct->buf_size = ct->rx_size = ct->tx_size = 0;
+	}
+	if (ct->fi_pep) {
+		fi_freeinfo(ct->fi_pep);
+		ct->fi_pep = NULL;
+	}
+	if (ct->fi) {
+		fi_freeinfo(ct->fi);
+		ct->fi = NULL;
+	}
+	if (ct->hints) {
+		fi_freeinfo(ct->hints);
+		ct->hints = NULL;
+	}
+}
+
 int ft_finalize(struct ct_pingpong *ct)
 {
 	struct iovec iov;
@@ -1621,67 +1744,9 @@ int ft_finalize(struct ct_pingpong *ct)
 	return 0;
 }
 
-int64_t get_elapsed(const struct timespec *b, const struct timespec *a,
-		    enum precision p)
-{
-	int64_t elapsed;
-
-	elapsed = difftime(a->tv_sec, b->tv_sec) * 1000 * 1000 * 1000;
-	elapsed += a->tv_nsec - b->tv_nsec;
-	return elapsed / p;
-}
-
-void show_perf(char *name, int tsize, int sent, int acked, struct timespec *start,
-		struct timespec *end, int xfers_per_iter)
-{
-	static int header = 1;
-	char str[FT_STR_LEN];
-	int64_t elapsed = get_elapsed(start, end, MICRO);
-	long long bytes = (long long) sent * tsize * xfers_per_iter;
-	float usec_per_xfer;
-
-	if (sent == 0)
-		return;
-
-	if (name) {
-		if (header) {
-			printf("%-50s%-8s%-8s%-9s%-8s%8s %10s%13s%13s\n",
-					"name", "bytes", "#sent", "#ack",
-					"total", "time", "MB/sec",
-					"usec/xfer", "Mxfers/sec");
-			header = 0;
-		}
-
-		printf("%-50s", name);
-	} else {
-		if (header) {
-			printf("%-8s%-8s%-9s%-8s%8s %10s%13s%13s\n",
-					"bytes", "#sent", "#ack", "total",
-					"time", "MB/sec", "usec/xfer",
-					"Mxfers/sec");
-			header = 0;
-		}
-	}
-
-	printf("%-8s", size_str(str, tsize));
-
-	printf("%-8s", cnt_str(str, sent));
-
-	if (sent == acked) {
-		printf("=%-8s", cnt_str(str, acked));
-	} else if (sent < acked) {
-		printf("-%-8s", cnt_str(str, abs(acked - sent)));
-	} else {
-		printf("+%-8s", cnt_str(str, abs(acked - sent)));
-	}
-
-	printf("%-8s", size_str(str, bytes));
-
-	usec_per_xfer = ((float)elapsed / sent / xfers_per_iter);
-	printf("%8.2fs%10.2f%11.2f%11.2f\n",
-		elapsed / 1000000.0, bytes / (1.0 * elapsed),
-		usec_per_xfer, 1.0/usec_per_xfer);
-}
+/*******************************************************************************************/
+/*                                CLI: Usage and  Options parsing                          */
+/*******************************************************************************************/
 
 void ft_pingpong_usage(char *name, char *desc)
 {
@@ -1795,7 +1860,7 @@ void ft_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 }
 
 /*******************************************************************************************/
-/*                                      PING PONG                                          */
+/*                        PingPong core and implemenations for endpoints                   */
 /*******************************************************************************************/
 
 int pingpong(struct ct_pingpong *ct)
@@ -1952,96 +2017,6 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 out:
 	fi_shutdown(ct->ep, 0);
 	return ret;
-}
-
-char *ep_name(int ep_type) {
-	char *en;
-	switch(ep_type) {
-		case FI_EP_DGRAM:	en = "dgram"; break;
-		case FI_EP_RDM:		en = "rdm"; break;
-		case FI_EP_MSG:		en = "msg"; break;
-		default:		en = "none(error)"; break;
-	}
-	return en;
-}
-
-void ft_banner_info(struct ct_pingpong *ct)
-{
-	FT_DEBUG("Running pingpong test with the %s endpoint trough a %s provider ...\n", ep_name(ct->fi->ep_attr->type), ct->fi->fabric_attr->prov_name);
-	FT_DEBUG(" * Fabric Attributes:\n");
-	FT_DEBUG("  - %-20s : %s\n", "name", ct->fi->fabric_attr->name);
-	FT_DEBUG("  - %-20s : %s\n", "prov_name", ct->fi->fabric_attr->prov_name);
-	FT_DEBUG("  - %-20s : %"PRIu32"\n", "prov_version", ct->fi->fabric_attr->prov_version);
-	FT_DEBUG(" * Domain Attributes:\n");
-	FT_DEBUG("  - %-20s : %s\n", "name", ct->fi->domain_attr->name);
-	FT_DEBUG("  - %-20s : %zu\n", "cq_cnt", ct->fi->domain_attr->cq_cnt);
-	FT_DEBUG("  - %-20s : %zu\n", "cq_data_size", ct->fi->domain_attr->cq_data_size);
-	FT_DEBUG("  - %-20s : %zu\n", "ep_cnt", ct->fi->domain_attr->ep_cnt);
-	FT_DEBUG(" * Endpoint Attributes:\n");
-	FT_DEBUG("  - %-20s : %s\n", "type", ep_name(ct->fi->ep_attr->type));
-	FT_DEBUG("  - %-20s : %"PRIu32"\n", "protocol", ct->fi->ep_attr->protocol);
-	FT_DEBUG("  - %-20s : %"PRIu32"\n", "protocol_version", ct->fi->ep_attr->protocol_version);
-	FT_DEBUG("  - %-20s : %zu\n", "max_msg_size", ct->fi->ep_attr->max_msg_size);
-	FT_DEBUG("  - %-20s : %zu\n", "max_order_raw_size", ct->fi->ep_attr->max_order_raw_size);
-}
-
-void ft_init_ct_pingpong(struct ct_pingpong *ct)
-{
-	ct->fi_pep = NULL;
-	ct->fi = NULL;
-	ct->hints = NULL;
-	ct->fabric = NULL;
-	ct->domain = NULL;
-	ct->pep = NULL;
-	ct->ep = NULL;
-	ct->txcq = NULL;
-	ct->rxcq = NULL;
-	ct->mr = NULL;
-	ct->av = NULL;
-	ct->eq = NULL;
-
-	ct->ctx_arr = NULL;
-	ct->remote_cq_data = 0;
-
-	ct->tx_seq = 0;
-	ct->rx_seq = 0;
-       	ct->tx_cq_cntr = 0;
-	ct->rx_cq_cntr = 0;
-
-	ct->ft_parent_proc = 0;
-	ct->ft_child_pid = 0;
-
-	ct->remote_fi_addr = FI_ADDR_UNSPEC;
-	ct->buf = NULL;
-	ct->tx_buf = NULL;
-	ct->rx_buf = NULL;
-
-	ct->buf_size = 0;
-       	ct->tx_size = 0;
-	ct->rx_size = 0;
-	ct->rx_fd = -1;
-	ct->tx_fd = -1;
-
-	strncpy(ct->test_name, "custom", 50);
-	ct->timeout = -1;
-
-	ct->av_attr = (struct fi_av_attr) {
-		.type = FI_AV_MAP,
-		.count = 1
-	};
-	ct->eq_attr = (struct fi_eq_attr) {
-		.wait_obj = FI_WAIT_UNSPEC
-	};
-	ct->cq_attr = (struct fi_cq_attr) {
-		.wait_obj = FI_WAIT_NONE
-	};
-
-	ct->ctrl_listenfd = -1;
-	ct->ctrl_connfd = -1;
-	ct->data_default_port = 9228;
-	ct->ctrl_port = 47592;
-
-	memset(ct->ctrl_buf, '\0', sizeof(ct->ctrl_buf));
 }
 
 int main(int argc, char **argv)
