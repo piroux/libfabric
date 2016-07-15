@@ -285,6 +285,57 @@ void ft_init_ct_pingpong(struct ct_pingpong *ct);
 /*                                       FT func                                           */
 /*******************************************************************************************/
 
+int generate_test_sizes(struct ft_opts *opts, size_t provider_maximum, int **sizes_)
+{
+        int defaults[6] = {64, 256, 1024, 4096, 655616, 1048576};
+        int power_of_two;
+        int half_up;
+	int n = 0;
+	int *sizes = NULL;
+
+	sizes = NULL;
+
+        sizes = calloc(64, sizeof(*sizes));
+        if (sizes == NULL)
+                return 0;
+	*sizes_ = sizes;
+
+        if (opts->options & FT_OPT_SIZE) {
+                if (opts->transfer_size > provider_maximum)
+                        return 0;
+
+                sizes[0] = opts->transfer_size;
+		n = 1;
+        } else if (opts->sizes_enabled != FT_ENABLE_ALL) {
+                for (int i = 0; i < sizeof(defaults); i++) {
+                        if (defaults[i] > provider_maximum)
+                                break;
+
+                        sizes[i] = defaults[i];
+			n++;
+                }
+        } else {
+                for (int i = 0; i < 22; i++) {
+                        power_of_two = (1 << (i + 1));
+                        half_up = power_of_two + (power_of_two / 2);
+
+                        if (power_of_two > provider_maximum)
+                                break;
+
+                        sizes[i * 2] = power_of_two;
+			n++;
+
+                        if (half_up > provider_maximum)
+                                break;
+
+                        sizes[(i * 2) + 1] = half_up;
+			n++;
+                }
+        }
+
+        return n;
+}
+
 int ft_ctrl_init(struct ct_pingpong  *ct)
 {
 	int err, ret;
@@ -406,8 +457,10 @@ int ft_ctrl_recv(struct ct_pingpong *ct, char *buf, size_t size)
 
 int ft_ctrl_finish(struct ct_pingpong  *ct)
 {
-	close(ct->ctrl_connfd);
-	close(ct->ctrl_listenfd);
+	if (ct->ctrl_connfd != -1)
+		close(ct->ctrl_connfd);
+	if (ct->ctrl_listenfd != -1)
+		close(ct->ctrl_listenfd);
 
 	return 0;
 }
@@ -644,8 +697,7 @@ int ft_alloc_msgs(struct ct_pingpong *ct)
 	memset(ct->buf, 0, ct->buf_size);
 	ct->rx_buf = ct->buf;
 	ct->tx_buf = (char *) ct->buf + MAX(ct->rx_size, FT_MAX_CTRL_MSG);
-	ct->tx_buf = (void *) (((uintptr_t) ct->tx_buf + alignment - 1) &
-			   ~(alignment - 1));
+	ct->tx_buf = (void *) (((uintptr_t) ct->tx_buf + alignment - 1) & ~(alignment - 1));
 
 	ct->remote_cq_data = ft_init_cq_data(ct->fi);
 
@@ -1797,45 +1849,39 @@ int pingpong(struct ct_pingpong *ct)
 
 static int run_pingpong_dgram(struct ct_pingpong *ct)
 {
-	int i, ret;
+	int i, ret, sizes_cnt;
+	int *sizes = NULL;
 
 	ret = ft_init_fabric(ct);
 	if (ret)
 		return ret;
 
-	/* Post an extra receive to avoid lacking a posted receive in the
-	 * finalize.
-	 */
-	ret = fi_recv(ct->ep, ct->rx_buf, ct->rx_size, fi_mr_desc(ct->mr),
-			0, &ct->rx_ctx);
+	/* Post an extra receive to avoid lacking a posted receive in the finalize. */
+	ret = fi_recv(ct->ep, ct->rx_buf, ct->rx_size, fi_mr_desc(ct->mr), 0, &ct->rx_ctx);
 
 	ft_banner_info(ct);
 
-	if (!(ct->opts.options & FT_OPT_SIZE)) {
-		for (i = 0; i < TEST_CNT; i++) {
-			if (!ft_use_size(i, ct->opts.sizes_enabled))
-				continue;
-			ct->opts.transfer_size = test_size[i].size;
-			if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size)
-				continue;
-			init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
-			ret = pingpong(ct);
-			if (ret)
-				return ret;
-		}
-	} else {
+	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes);
+
+	for (i = 0; i < sizes_cnt; i++) {
+		ct->opts.transfer_size = sizes[i];
+		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size)
+			continue;
 		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
 		ret = pingpong(ct);
 		if (ret)
 			return ret;
 	}
+
+	free(sizes);
 
 	return ft_finalize(ct);
 }
 
 static int run_pingpong_rdm(struct ct_pingpong *ct)
 {
-	int i, ret = 0;
+	int i, ret, sizes_cnt;
+	int *sizes = NULL;
 
 	ret = ft_init_fabric(ct);
 	if (ret)
@@ -1843,29 +1889,27 @@ static int run_pingpong_rdm(struct ct_pingpong *ct)
 
 	ft_banner_info(ct);
 
-	if (!(ct->opts.options & FT_OPT_SIZE)) {
-		for (i = 0; i < TEST_CNT; i++) {
-			if (!ft_use_size(i, ct->opts.sizes_enabled))
-				continue;
-			ct->opts.transfer_size = test_size[i].size;
-			init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
-			ret = pingpong(ct);
-			if (ret)
-				return ret;
-		}
-	} else {
+	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes);
+
+	for (i = 0; i < sizes_cnt; i++) {
+		ct->opts.transfer_size = sizes[i];
+		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size)
+			continue;
 		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
 		ret = pingpong(ct);
 		if (ret)
 			return ret;
 	}
 
+	free(sizes);
+
 	return ft_finalize(ct);
 }
 
 static int run_pingpong_msg(struct ct_pingpong *ct)
 {
-	int i, ret;
+	int i, ret, sizes_cnt;
+	int *sizes = NULL;
 
 	ret = ft_ctrl_init(ct);
 	if (ret) {
@@ -1890,22 +1934,19 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 
 	ft_banner_info(ct);
 
-	if (!(ct->opts.options & FT_OPT_SIZE)) {
-		for (i = 0; i < TEST_CNT; i++) {
-			if (!ft_use_size(i, ct->opts.sizes_enabled))
-				continue;
-			ct->opts.transfer_size = test_size[i].size;
-			init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
-			ret = pingpong(ct);
-			if (ret)
-				goto out;
-		}
-	} else {
+	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes);
+
+	for (i = 0; i < sizes_cnt; i++) {
+		ct->opts.transfer_size = sizes[i];
+		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size)
+			continue;
 		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
 		ret = pingpong(ct);
 		if (ret)
 			goto out;
 	}
+
+	free(sizes);
 
 	ret = ft_finalize(ct);
 out:
@@ -1995,6 +2036,8 @@ void ft_init_ct_pingpong(struct ct_pingpong *ct)
 		.wait_obj = FI_WAIT_NONE
 	};
 
+	ct->ctrl_listenfd = -1;
+	ct->ctrl_connfd = -1;
 	ct->data_default_port = 9228;
 	ct->ctrl_port = 47592;
 
