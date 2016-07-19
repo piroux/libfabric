@@ -33,7 +33,8 @@ over the selected endpoint, or the default DGRAM if none is selected.
 
 # HOW TO RUN TESTS
 
-To launch properly a pingpong test, two termimals have to be open : one for the client , the other for the server.
+To launch properly a pingpong test, two termimals have to be open : one for the client,
+the other for the server. However the server must be already running to start the client.
 
 As a client-server test, each have the following usage model:
 
@@ -43,7 +44,7 @@ client$	fi_pingpong <server endpoint address>		: connect to server
 
 # OPTIONS
 
-The command line of of the server and the client must be launched with exactly the same set of options. Otherwise the test would fail because the two nodes would not be able to communicate properly.
+The command line of the server and the client must be launched with exactly the same set of options. Otherwise the test would fail because the two nodes would not be able to communicate properly.
 
 ## Nodes addressing
 
@@ -70,12 +71,15 @@ The type of endpoint to be used for data messaging between the two nodes.
 ## Messaging
 
 *-I <iter>*
-: Number of iterations of the test will run.
+: The number of iterations of the test will run.
 
 *-S <msg_size>*
 : The specific size of the message in bytes the test will use or 'all' to run all the default sizes.
 
 ## Utils
+
+*-v*
+: Activate the verification of incoming data.
 
 *-d*
 : Activate output debugging (warning: highly verbose)
@@ -115,11 +119,27 @@ Specifically, this will run only one test with :
 	run client:
 		client$ fi_pingpong -f usnic -I 10000 -S all 192.168.0.123
 
-# Defaults
+## Defaults
 
-For the provider, there is no default value as such. The selection of the provider is ultimately determined by libfabric while probing for hardware with the sets of hints generated with the options.
+For the provider, there is no default value as such. The selection of the provider
+is ultimately determined by libfabric while probing for hardware with the sets of hints generated with the options.
+
 For the provider, the default value is 'dgram'.
+
 The default tested sizes are :  64, 256, 1024, 4096
+
+# OUTPUT
+
+Each test generates data messages which are accounted for. Specifically, the displayed statitics at the end are :
+
+ - 'bytes'          : number of bytes per message sent
+ - '#sent'          : number of messages (ping) sent from the client to the server
+ - '#ack'           : number of replies (pong) of the server received by the client
+ - 'total'          : amount of memory exchanged between the nodes
+ - 'time'           : duration of this single test
+ - 'MB/sec'         : throughput computed from 'total' and 'time'
+ - 'usec/xfer'      : average time for transfering a message outbound (ping or pong) in microseconds
+ - 'Mxfers/sec'     : average amount of transfers of message outbound per second
 
 # SEE ALSO
 
