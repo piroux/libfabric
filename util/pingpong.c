@@ -91,6 +91,9 @@ struct ft_opts {
 	char **argv;
 };
 
+#define FT_SIZE_MAX_POWER_TWO 22
+#define FT_MAX_DATA_MSG (1 << (FT_SIZE_MAX_POWER_TWO + 1)) + (1 << FT_SIZE_MAX_POWER_TWO);
+
 #define FT_STR_LEN 32
 #define FT_MAX_CTRL_MSG 64
 #define FT_CTRL_BUF_LEN 64
@@ -186,39 +189,6 @@ struct ct_pingpong {
 	struct sockaddr_in ctrl_addr;
 	char ctrl_buf[FT_CTRL_BUF_LEN + 1];
 };
-
-struct test_size_param {
-	int size;
-	int enable_flags;
-};
-
-struct test_size_param test_size[] = {
-	{ 1 <<  1, 0 }, { (1 <<  1) + (1 <<  0), 0 },
-	{ 1 <<  2, 0 }, { (1 <<  2) + (1 <<  1), 0 },
-	{ 1 <<  3, 0 }, { (1 <<  3) + (1 <<  2), 0 },
-	{ 1 <<  4, 0 }, { (1 <<  4) + (1 <<  3), 0 },
-	{ 1 <<  5, 0 }, { (1 <<  5) + (1 <<  4), 0 },
-	{ 1 <<  6, FT_DEFAULT_SIZE }, { (1 <<  6) + (1 <<  5), 0 },
-	{ 1 <<  7, 0 }, { (1 <<  7) + (1 <<  6), 0 },
-	{ 1 <<  8, FT_DEFAULT_SIZE }, { (1 <<  8) + (1 <<  7), 0 },
-	{ 1 <<  9, 0 }, { (1 <<  9) + (1 <<  8), 0 },
-	{ 1 << 10, FT_DEFAULT_SIZE }, { (1 << 10) + (1 <<  9), 0 },
-	{ 1 << 11, 0 }, { (1 << 11) + (1 << 10), 0 },
-	{ 1 << 12, FT_DEFAULT_SIZE }, { (1 << 12) + (1 << 11), 0 },
-	{ 1 << 13, FT_DEFAULT_SIZE }, { (1 << 13) + (1 << 12), FT_DEFAULT_SIZE },
-	{ 1 << 14, FT_DEFAULT_SIZE }, { (1 << 14) + (1 << 13), 0 },
-	{ 1 << 15, 0 }, { (1 << 15) + (1 << 14), 0 },
-	{ 1 << 16, 0}, { (1 << 16) + (1 << 15), 0 },
-	{ 1 << 17, 0 }, { (1 << 17) + (1 << 16), 0 },
-	{ 1 << 18, 0 }, { (1 << 18) + (1 << 17), 0 },
-	{ 1 << 19, 0 }, { (1 << 19) + (1 << 18), 0 },
-	{ 1 << 20, 0}, { (1 << 20) + (1 << 19), 0 },
-	{ 1 << 21, 0}, { (1 << 21) + (1 << 20), 0 },
-	{ 1 << 22, 0}, { (1 << 22) + (1 << 21), 0 },
-	{ 1 << 23, 0 },
-};
-
-const unsigned int TEST_CNT = (sizeof test_size / sizeof test_size[0]);
 
 static const char integ_alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 static const int integ_alphabet_length = (sizeof(integ_alphabet)/sizeof(*integ_alphabet)) - 1;
@@ -812,7 +782,7 @@ int ft_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struc
 /*                                  	  Test sizes                                       */
 /*******************************************************************************************/
 
-int generate_test_sizes(struct ft_opts *opts, size_t provider_maximum, int **sizes_)
+int generate_test_sizes(struct ft_opts *opts, size_t provider_maximum, int **sizes_, int size_power_two_max)
 {
         int defaults[6] = {64, 256, 1024, 4096, 655616, 1048576};
         int power_of_two;
@@ -842,7 +812,7 @@ int generate_test_sizes(struct ft_opts *opts, size_t provider_maximum, int **siz
 			n++;
                 }
         } else {
-                for (int i = 0; i < 22; i++) {
+                for (int i = 0; i < size_power_two_max; i++) {
                         power_of_two = (1 << (i + 1));
                         half_up = power_of_two + (power_of_two / 2);
 
@@ -1217,8 +1187,7 @@ int ft_alloc_msgs(struct ct_pingpong *ct)
 	int ret;
 	long alignment = 1;
 
-	ct->tx_size = ct->opts.options & FT_OPT_SIZE ?
-		  ct->opts.transfer_size : test_size[TEST_CNT - 1].size;
+	ct->tx_size = ct->opts.options & FT_OPT_SIZE ? ct->opts.transfer_size : FT_MAX_DATA_MSG;
 	if (ct->tx_size > ct->fi->ep_attr->max_msg_size)
 		ct->tx_size = ct->fi->ep_attr->max_msg_size;
 	ct->rx_size = ct->tx_size;
@@ -2028,7 +1997,7 @@ static int run_pingpong_dgram(struct ct_pingpong *ct)
 
 	ft_banner_fabric_info(ct);
 
-	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes);
+	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, FT_SIZE_MAX_POWER_TWO);
 
 	FT_DEBUG("Count of sizes to test : %d\n", sizes_cnt);
 
@@ -2062,7 +2031,7 @@ static int run_pingpong_rdm(struct ct_pingpong *ct)
 
 	ft_banner_fabric_info(ct);
 
-	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes);
+	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, FT_SIZE_MAX_POWER_TWO);
 
 	FT_DEBUG("Count of sizes to test : %d\n", sizes_cnt);
 
@@ -2113,7 +2082,7 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 
 	ft_banner_fabric_info(ct);
 
-	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes);
+	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, FT_SIZE_MAX_POWER_TWO);
 
 	FT_DEBUG("Count of sizes to test : %d\n", sizes_cnt);
 
