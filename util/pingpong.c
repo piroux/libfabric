@@ -451,7 +451,7 @@ int ft_ctrl_recv(struct ct_pingpong *ct, char *buf, size_t size)
 	return ret;
 }
 
-int ft_ctrl_finish(struct ct_pingpong  *ct)
+int ft_ctrl_finish(struct ct_pingpong *ct)
 {
 	if (ct->ctrl_connfd != -1)
 		close(ct->ctrl_connfd);
@@ -779,60 +779,60 @@ int ft_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struc
 }
 
 /*******************************************************************************************/
-/*                                  	  Test sizes                                       */
+/*                                       Test sizes                                        */
 /*******************************************************************************************/
 
 int generate_test_sizes(struct ft_opts *opts, size_t provider_maximum, int **sizes_, int size_power_two_max)
 {
-        int defaults[6] = {64, 256, 1024, 4096, 655616, 1048576};
-        int power_of_two;
-        int half_up;
+	int defaults[6] = {64, 256, 1024, 4096, 655616, 1048576};
+	int power_of_two;
+	int half_up;
 	int n = 0;
 	int *sizes = NULL;
 
 	FT_DEBUG("Generating test sizes\n");
 
-        sizes = calloc(64, sizeof(*sizes));
-        if (sizes == NULL)
-                return 0;
+	sizes = calloc(64, sizeof(*sizes));
+	if (sizes == NULL)
+		return 0;
 	*sizes_ = sizes;
 
-        if (opts->options & FT_OPT_SIZE) {
-                if (opts->transfer_size > provider_maximum)
-                        return 0;
+	if (opts->options & FT_OPT_SIZE) {
+		if (opts->transfer_size > provider_maximum)
+			return 0;
 
-                sizes[0] = opts->transfer_size;
+		sizes[0] = opts->transfer_size;
 		n = 1;
-        } else if (opts->sizes_enabled != FT_ENABLE_ALL) {
-                for (int i = 0; i < (sizeof defaults / sizeof defaults[0]); i++) {
-                        if (defaults[i] > provider_maximum)
-                                break;
+	} else if (opts->sizes_enabled != FT_ENABLE_ALL) {
+		for (int i = 0; i < (sizeof defaults / sizeof defaults[0]); i++) {
+			if (defaults[i] > provider_maximum)
+				break;
 
-                        sizes[i] = defaults[i];
+			sizes[i] = defaults[i];
 			n++;
-                }
-        } else {
-                for (int i = 0; i < size_power_two_max; i++) {
-                        power_of_two = (1 << (i + 1));
-                        half_up = power_of_two + (power_of_two / 2);
+		}
+	} else {
+		for (int i = 0; i < size_power_two_max; i++) {
+			power_of_two = (1 << (i + 1));
+			half_up = power_of_two + (power_of_two / 2);
 
-                        if (power_of_two > provider_maximum)
-                                break;
+			if (power_of_two > provider_maximum)
+				break;
 
-                        sizes[i * 2] = power_of_two;
+			sizes[i * 2] = power_of_two;
 			n++;
 
-                        if (half_up > provider_maximum)
-                                break;
+			if (half_up > provider_maximum)
+				break;
 
-                        sizes[(i * 2) + 1] = half_up;
+			sizes[(i * 2) + 1] = half_up;
 			n++;
-                }
-        }
+		}
+	}
 
 	FT_DEBUG("Generated %d test sizes\n", n);
 
-        return n;
+	return n;
 }
 
 /*******************************************************************************************/
@@ -946,8 +946,9 @@ void show_perf(char *name, int tsize, int sent, int acked, struct timespec *star
 		elapsed / 1000000.0, bytes / (1.0 * elapsed),
 		usec_per_xfer, 1.0/usec_per_xfer);
 }
+
 /*******************************************************************************************/
-/*                               	Data Messaging                                     */
+/*                                      Data Messaging                                     */
 /*******************************************************************************************/
 
 int ft_cq_readerr(struct fid_cq *cq)
@@ -1072,7 +1073,7 @@ int ft_get_tx_comp(struct ct_pingpong *ct, uint64_t total)
 ssize_t ft_post_tx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size, struct fi_context* ctx)
 {
 	FT_POST(fi_send, ft_get_tx_comp, ct->tx_seq, "transmit", ep,
-			ct->tx_buf,	size, fi_mr_desc(ct->mr),
+			ct->tx_buf, size, fi_mr_desc(ct->mr),
 			ct->remote_fi_addr, ctx);
 	return 0;
 }
@@ -1120,7 +1121,7 @@ ssize_t ft_post_rx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size, struc
 {
 	FT_POST(fi_recv, ft_get_rx_comp, ct->rx_seq, "receive", ep, ct->rx_buf,
 			MAX(size, FT_MAX_CTRL_MSG),
-			fi_mr_desc(ct->mr),	0, ctx);
+			fi_mr_desc(ct->mr), 0, ctx);
 	return 0;
 }
 
@@ -1396,7 +1397,7 @@ int ft_av_insert(struct fid_av *av, void *addr, size_t count, fi_addr_t *fi_addr
 		return -EXIT_FAILURE;
 	}
 
-	FT_DEBUG("Connection-less endpoint: inserte new address in vector\n");
+	FT_DEBUG("Connection-less endpoint: new address inserted in vector\n");
 
 	return 0;
 }
@@ -1810,7 +1811,7 @@ int ft_finalize(struct ct_pingpong *ct)
 }
 
 /*******************************************************************************************/
-/*                                CLI: Usage and  Options parsing                          */
+/*                                CLI: Usage and Options parsing                           */
 /*******************************************************************************************/
 
 void ft_pingpong_usage(char *name, char *desc)
