@@ -672,57 +672,9 @@ int ft_check_buf(void *buf, int size)
 }
 
 /*******************************************************************************************/
-/*                                       Addresses handling                                */
+/*                                      Error handling                                     */
 /*******************************************************************************************/
 
-static int dupaddr(void **dst_addr, size_t *dst_addrlen,
-		void *src_addr, size_t src_addrlen)
-{
-	*dst_addr = malloc(src_addrlen);
-	if (!*dst_addr) {
-		FT_ERR("address allocation failed");
-		return EAI_MEMORY;
-	}
-	*dst_addrlen = src_addrlen;
-	memcpy(*dst_addr, src_addr, src_addrlen);
-	return 0;
-}
-
-static int getaddr(char *node, char *service,
-			struct fi_info *hints, uint64_t flags)
-{
-	int ret;
-	struct fi_info *fi;
-
-	if (!node && !service) {
-		if (flags & FI_SOURCE) {
-			hints->src_addr = NULL;
-			hints->src_addrlen = 0;
-		} else {
-			hints->dest_addr = NULL;
-			hints->dest_addrlen = 0;
-		}
-		return 0;
-	}
-
-	ret = fi_getinfo(FT_FIVERSION, node, service, flags, hints, &fi);
-	if (ret) {
-		FT_PRINTERR("fi_getinfo", ret);
-		return ret;
-	}
-	hints->addr_format = fi->addr_format;
-
-	if (flags & FI_SOURCE) {
-		ret = dupaddr(&hints->src_addr, &hints->src_addrlen,
-				fi->src_addr, fi->src_addrlen);
-	} else {
-		ret = dupaddr(&hints->dest_addr, &hints->dest_addrlen,
-				fi->dest_addr, fi->dest_addrlen);
-	}
-
-	fi_freeinfo(fi);
-	return ret;
-}
 
 void eq_readerr(struct fid_eq *eq)
 {
@@ -747,9 +699,39 @@ void ft_process_eq_err(ssize_t rd, struct fid_eq *eq, const char *fn) {
 	}
 }
 
-int ft_getsrcaddr(char *node, char *service, struct fi_info *hints)
+/*******************************************************************************************/
+/*                                    Addresses handling                                   */
+/*******************************************************************************************/
+
+static int ft_getsrcaddr(char *node, char *service, struct fi_info *hints)
 {
-	return getaddr(node, service, hints, FI_SOURCE);
+	struct fi_info *info;
+	int ret = 0;
+
+	ret = fi_getinfo(FT_FIVERSION, node, service, FI_SOURCE, NULL, &info);
+	if (ret) {
+		FT_PRINTERR("fi_getinfo", ret);
+		return ret;
+	}
+
+	hints->src_addrlen = info->src_addrlen;
+	hints->src_addr = calloc(1, hints->src_addrlen);
+	if (!hints->src_addr) {
+		ret = -errno;
+		FT_PRINTERR("calloc", ret);
+		goto err;
+	}
+
+	memcpy(hints->src_addr, info->src_addr, hints->src_addrlen);
+	if (!hints->src_addr) {
+		ret = -errno;
+		FT_PRINTERR("memcpy", ret);
+		goto err;
+	}
+
+err:
+	fi_freeinfo(info);
+	return ret;
 }
 
 int ft_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struct fi_info *hints,
@@ -758,12 +740,17 @@ int ft_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struc
 	int ret;
 
 	if (opts->dst_addr) {
+		if (opts->src_addr) {
+			ret = ft_getsrcaddr(opts->src_addr, opts->src_port, hints);
+			if (ret) {
+				FT_ERR("Trying to get the source address for the client");
+				return ret;
+			}
+		}
+
 		if (!opts->dst_port)
 			opts->dst_port = ct->data_port;
 
-		ret = ft_getsrcaddr(opts->src_addr, opts->src_port, hints);
-		if (ret)
-			return ret;
 		*node = opts->dst_addr;
 		*service = opts->dst_port;
 	} else {
@@ -777,6 +764,7 @@ int ft_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struc
 
 	return 0;
 }
+
 
 /*******************************************************************************************/
 /*                                       Test sizes                                        */
@@ -1818,7 +1806,7 @@ void ft_pingpong_usage(char *name, char *desc)
 {
 	fprintf(stderr, "Usage:\n");
 	fprintf(stderr, "  %s [OPTIONS]\t\tstart server\n", name);
-	fprintf(stderr, "  %s [OPTIONS] <host>\tconnect to server\n", name);
+	fprintf(stderr, "  %s [OPTIONS] <srv_addr>\tconnect to server\n", name);
 
 	if (desc)
 		fprintf(stderr, "\n%s\n", desc);
@@ -1827,7 +1815,7 @@ void ft_pingpong_usage(char *name, char *desc)
 
 	fprintf(stderr, " %-20s %s\n", "-b <src_port>", "non default source port number");
 	fprintf(stderr, " %-20s %s\n", "-p <dst_port>", "non default destination port number");
-	fprintf(stderr, " %-20s %s\n", "-s <address>", "source address");
+	fprintf(stderr, " %-20s %s\n", "-s <address>", "server address");
 
 	fprintf(stderr, " %-20s %s\n", "-n <domain>", "domain name");
 	fprintf(stderr, " %-20s %s\n", "-f <provider>", "specific provider name eg sockets, verbs");
