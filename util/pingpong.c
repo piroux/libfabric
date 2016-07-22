@@ -220,32 +220,6 @@ long parse_ulong(char *str, long max) {
 	return ret;
 }
 
-int ft_test_provider(struct ct_pingpong *ct, struct fi_info *hints)
-{
-	char *node = NULL, *service = NULL;
-	uint64_t flags = 0;
-	int ret;
-	struct fi_info *fi;
-
-	if (!ct->opts.dst_addr) {
-		flags = FI_SOURCE;
-		hints->src_addr = NULL;
-		hints->src_addrlen = 0;
-	} else {
-		hints->dest_addr = NULL;
-		hints->dest_addrlen = 0;
-	}
-
-	if (!hints->ep_attr->type)
-		hints->ep_attr->type = FI_EP_DGRAM;
-
-	ret = fi_getinfo(FT_FIVERSION, node, service, flags, hints, &fi);
-	if (ret) {
-		return 0;
-	}
-	return 1;
-}
-
 int size_to_count(int size)
 {
 	if (size >= (1 << 20))
@@ -1682,15 +1656,6 @@ int ft_init_fabric(struct ct_pingpong *ct)
 	ret = ft_ctrl_txrx_data_port(ct);
 	if (ret)
 		return ret;
-
-	if (ct->hints->fabric_attr->prov_name != NULL) {
-		if (!ft_test_provider(ct, ct->hints)) {
-			fprintf(stderr, "No provider matching the hints : %s\n", ct->hints->fabric_attr->prov_name);
-			return -EXIT_FAILURE;
-		} else {
-			FT_DEBUG("Known provider : %s\n", ct->hints->fabric_attr->prov_name);
-		}
-	}
 
 	ret = ft_getinfo(ct, ct->hints, &(ct->fi));
 	if (ret)
