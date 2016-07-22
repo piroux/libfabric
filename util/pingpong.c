@@ -331,6 +331,10 @@ void ft_banner_options(struct ct_pingpong *ct)
 int ft_ctrl_init(struct ct_pingpong  *ct)
 {
 	int err, ret;
+	struct timeval tv;
+
+	tv.tv_sec = 5;
+	tv.tv_usec = 0;
 
 	FT_DEBUG("Initializing control messages ...\n");
 
@@ -385,7 +389,7 @@ int ft_ctrl_init(struct ct_pingpong  *ct)
 			return err;
 		}
 
-		ret = listen(ct->ctrl_listenfd, 100);
+		ret = listen(ct->ctrl_listenfd, 1);
 		if (ret == -1) {
 			err = -errno;
 			FT_PRINTERR("listen", err);
@@ -402,6 +406,13 @@ int ft_ctrl_init(struct ct_pingpong  *ct)
 		FT_DEBUG("SERVER: connection acquired\n");
 	}
 
+	ret = setsockopt(ct->ctrl_connfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
+	if (ret == -1) {
+		err = -errno;
+		FT_PRINTERR("setsockopt(SO_RCVTIMEO)", err);
+		return err;
+	}
+
 	FT_DEBUG("Control messages initialized\n");
 
 	return 0;
@@ -411,10 +422,15 @@ int ft_ctrl_send(struct ct_pingpong *ct, char *buf, size_t size)
 {
 	int ret, err;
 
-	ret = write(ct->ctrl_connfd, buf, size);
+	ret = send(ct->ctrl_connfd, buf, size, 0);
 	if (ret < 0) {
 		err = -errno;
-		FT_PRINTERR("write", err);
+		FT_PRINTERR("ctrl/send", err);
+		return err;
+	}
+	if (ret == 0) {
+		err = -ECONNABORTED;
+		FT_ERR("ctrl/read : no data or remote connection closed");
 		return err;
 	}
 	FT_DEBUG("----> sent (%d/%ld) : \"", ret, size);
@@ -433,10 +449,15 @@ int ft_ctrl_recv(struct ct_pingpong *ct, char *buf, size_t size)
 {
 	int ret, err;
 
-	ret = read(ct->ctrl_connfd, buf, size);
+	ret = recv(ct->ctrl_connfd, buf, size, 0);
 	if (ret < 0) {
 		err = -errno;
-		FT_PRINTERR("read", err);
+		FT_PRINTERR("ctrl/read", err);
+		return err;
+	}
+	if (ret == 0) {
+		err = -ECONNABORTED;
+		FT_ERR("ctrl/read : no data or remote connection closed");
 		return err;
 	}
 	FT_DEBUG("----> received (%d/%ld) : \"", ret, size);
@@ -472,14 +493,14 @@ int ft_ctrl_txrx_data_port(struct ct_pingpong *ct)
 
 		FT_DEBUG("CLIENT: receiving port ...\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, FT_MSG_LEN_PORT);
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
 		ct->data_default_port = (int) parse_ulong(ct->ctrl_buf, (1 << 16) - 1);
 		FT_DEBUG("CLIENT: received port = <%d> (len=%lu)\n", ct->data_default_port, strlen(ct->ctrl_buf));
 
 		snprintf(ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK) , "%s", FT_MSG_CHECK_PORT_OK);
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK));
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
 		FT_DEBUG("CLIENT: acked port to server\n");
 	} else {
@@ -487,18 +508,18 @@ int ft_ctrl_txrx_data_port(struct ct_pingpong *ct)
 
 		FT_DEBUG("SERVER: sending port = <%s> (len=%lu) ...\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, FT_MSG_LEN_PORT);
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
 		FT_DEBUG("SERVER: sent port\n");
 
 		memset(&ct->ctrl_buf, '\0', sizeof(FT_MSG_CHECK_PORT_OK));
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK));
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
 
 		if (strcmp(ct->ctrl_buf, FT_MSG_CHECK_PORT_OK)) {
 			FT_DEBUG("SERVER: error while client acking the port : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
-			return ret;
+			return -EBADE;
 		}
 		FT_DEBUG("SERVER: port acked by client\n");
 	}
@@ -521,26 +542,44 @@ int ft_ctrl_sync(struct ct_pingpong *ct)
 
 		FT_DEBUG("CLIENT: syncing ...\n");
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_SYNC_Q));
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
+		if (ret < sizeof(FT_MSG_SYNC_Q)) {
+			FT_ERR("CLIENT: bad length of sent data (len=%d/%zu)", ret, sizeof(FT_MSG_SYNC_Q));
+			return -EBADE;
+		}
 		FT_DEBUG("CLIENT: syncing now\n");
 
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_SYNC_A));
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
+		if (strcmp(ct->ctrl_buf, FT_MSG_SYNC_A)) {
+			ct->ctrl_buf[FT_CTRL_BUF_LEN] = '\0';
+			FT_DEBUG("CLIENT: sync error while acking A : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+			return -EBADE;
+		}
 		FT_DEBUG("CLIENT: synced\n");
 	} else {
 		FT_DEBUG("SERVER: syncing ...\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_SYNC_Q));
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
+		if (strcmp(ct->ctrl_buf, FT_MSG_SYNC_Q)) {
+			ct->ctrl_buf[FT_CTRL_BUF_LEN] = '\0';
+			FT_DEBUG("SERVER: sync error while acking Q : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+			return -EBADE;
+		}
 
 		FT_DEBUG("SERVER: syncing now\n");
 		snprintf(ct->ctrl_buf, sizeof(FT_MSG_SYNC_A) , "%s", FT_MSG_SYNC_A);
 
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_SYNC_A));
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
+		if (ret < sizeof(FT_MSG_SYNC_A)) {
+			FT_ERR("SERVER: bad length of sent data (len=%d/%zu)", ret, sizeof(FT_MSG_SYNC_A));
+			return -EBADE;
+		}
 		FT_DEBUG("SERVER: synced\n");
 	}
 
@@ -561,13 +600,21 @@ int ft_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 
 		FT_DEBUG("CLIENT: sending count = <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, FT_MSG_LEN_CNT);
-		if (ret <= 0 || ret < FT_MSG_LEN_CNT)
+		if (ret < 0)
 			return ret;
+		if (ret < FT_MSG_LEN_CNT) {
+			FT_ERR("CLIENT: bad length of sent data (len=%d/%d)", ret, FT_MSG_LEN_CNT);
+			return -EBADE;
+		}
 		FT_DEBUG("CLIENT: sent count ...\n");
 
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_CNT_OK));
-		if (ret <= 0 || ret < sizeof(FT_MSG_CHECK_CNT_OK))
+		if (ret < 0)
 			return ret;
+		if (ret < sizeof(FT_MSG_CHECK_CNT_OK)) {
+			FT_ERR("CLIENT: bad length of received data (len=%d/%zu)", ret, sizeof(FT_MSG_CHECK_CNT_OK));
+			return -EBADE;
+		}
 
 		if (strcmp(ct->ctrl_buf, FT_MSG_CHECK_CNT_OK)) {
 			FT_DEBUG("CLIENT: error while server acking the count : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
@@ -579,15 +626,23 @@ int ft_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 
 		FT_DEBUG("SERVER: receiving count ...\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, FT_MSG_LEN_CNT);
-		if (ret <= 0 || ret < FT_MSG_LEN_CNT)
+		if (ret < 0)
 			return ret;
+		if (ret < FT_MSG_LEN_CNT) {
+			FT_ERR("SERVER: bad length of received data (len=%d/%d)", ret, FT_MSG_LEN_CNT);
+			return -EBADE;
+		}
 		ct->cnt_ack_msg = parse_ulong(ct->ctrl_buf, -1);
 		FT_DEBUG("SERVER: received count = <%ld> (len=%lu)\n", ct->cnt_ack_msg, strlen(ct->ctrl_buf));
 
 		snprintf(ct->ctrl_buf, sizeof(FT_MSG_CHECK_CNT_OK), "%s", FT_MSG_CHECK_CNT_OK);
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_CNT_OK));
-		if (ret <= 0 || ret < sizeof(FT_MSG_CHECK_CNT_OK))
+		if (ret < 0)
 			return ret;
+		if (ret < sizeof(FT_MSG_CHECK_CNT_OK)) {
+			FT_ERR("CLIENT: bad length of received data (len=%d/%zu)", ret, sizeof(FT_MSG_CHECK_CNT_OK));
+			return -EBADE;
+		}
 		FT_DEBUG("SERVER: acked count to client\n");
 	}
 
@@ -1413,19 +1468,19 @@ int ft_init_av(struct ct_pingpong *ct)
 
 		FT_DEBUG("CLIENT: sending av ...\n");
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, addrlen);
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
 		FT_DEBUG("CLIENT: sent av ...\n");
 
 		FT_DEBUG("CLIENT: waiting for acked av ....\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK));
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
 		FT_DEBUG("CLIENT: av acked\n");
 	} else {
 		FT_DEBUG("SERVER: receiving av ...\n");
 		ret = ft_ctrl_recv(ct, ct->ctrl_buf, addrlen);
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
 		FT_DEBUG("SERVER: received av\n");
 
@@ -1435,7 +1490,7 @@ int ft_init_av(struct ct_pingpong *ct)
 
 		FT_DEBUG("SERVER: acking av ....\n");
 		ret = ft_ctrl_send(ct, ct->ctrl_buf, sizeof(FT_MSG_CHECK_PORT_OK));
-		if (ret <= 0)
+		if (ret < 0)
 			return ret;
 		FT_DEBUG("SERVER: acked av\n");
 	}
@@ -1498,6 +1553,11 @@ int ft_server_connect(struct ct_pingpong *ct)
 	int ret;
 
 	FT_DEBUG("Connected endpoint: connecting server\n");
+
+	/* Check that the remote is still up */
+	ret = ft_ctrl_sync(ct);
+	if (ret)
+		return ret;
 
 	/* Listen */
 	rd = fi_eq_sread(ct->eq, &event, &entry, sizeof entry, -1, 0);
@@ -1568,6 +1628,11 @@ int ft_client_connect(struct ct_pingpong *ct)
 	if (ret)
 		return ret;
 
+	/* Check that the remote is still up */
+	ret = ft_ctrl_sync(ct);
+	if (ret)
+		return ret;
+
 	ret = ft_open_fabric_res(ct);
 	if (ret)
 		return ret;
@@ -1610,6 +1675,14 @@ int ft_init_fabric(struct ct_pingpong *ct)
 
 	FT_DEBUG("Initializing fabric ...\n");
 
+	ret = ft_ctrl_init(ct);
+	if (ret)
+		return ret;
+
+	ret = ft_ctrl_txrx_data_port(ct);
+	if (ret)
+		return ret;
+
 	if (ct->hints->fabric_attr->prov_name != NULL) {
 		if (!ft_test_provider(ct, ct->hints)) {
 			fprintf(stderr, "No provider matching the hints : %s\n", ct->hints->fabric_attr->prov_name);
@@ -1619,15 +1692,12 @@ int ft_init_fabric(struct ct_pingpong *ct)
 		}
 	}
 
-	ret = ft_ctrl_init(ct);
-	if (ret)
-		return ret;
-
-	ret = ft_ctrl_txrx_data_port(ct);
-	if (ret)
-		return ret;
-
 	ret = ft_getinfo(ct, ct->hints, &(ct->fi));
+	if (ret)
+		return ret;
+
+	/* Check that the remote is still up */
+	ret = ft_ctrl_sync(ct);
 	if (ret)
 		return ret;
 
