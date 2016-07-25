@@ -514,7 +514,7 @@ int pp_ctrl_txrx_data_port(struct ct_pingpong *ct)
 
 		if (strcmp(ct->ctrl_buf, PP_MSG_CHECK_PORT_OK)) {
 			PP_DEBUG("SERVER: error while client acking the port : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
-			return -EBADE;
+			return -EBADMSG;
 		}
 		PP_DEBUG("SERVER: port acked by client\n");
 	}
@@ -541,7 +541,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 			return ret;
 		if (ret < sizeof(PP_MSG_SYNC_Q)) {
 			PP_ERR("CLIENT: bad length of sent data (len=%d/%zu)", ret, sizeof(PP_MSG_SYNC_Q));
-			return -EBADE;
+			return -EBADMSG;
 		}
 		PP_DEBUG("CLIENT: syncing now\n");
 
@@ -551,7 +551,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 		if (strcmp(ct->ctrl_buf, PP_MSG_SYNC_A)) {
 			ct->ctrl_buf[PP_CTRL_BUF_LEN] = '\0';
 			PP_DEBUG("CLIENT: sync error while acking A : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
-			return -EBADE;
+			return -EBADMSG;
 		}
 		PP_DEBUG("CLIENT: synced\n");
 	} else {
@@ -562,7 +562,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 		if (strcmp(ct->ctrl_buf, PP_MSG_SYNC_Q)) {
 			ct->ctrl_buf[PP_CTRL_BUF_LEN] = '\0';
 			PP_DEBUG("SERVER: sync error while acking Q : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
-			return -EBADE;
+			return -EBADMSG;
 		}
 
 		PP_DEBUG("SERVER: syncing now\n");
@@ -573,7 +573,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 			return ret;
 		if (ret < sizeof(PP_MSG_SYNC_A)) {
 			PP_ERR("SERVER: bad length of sent data (len=%d/%zu)", ret, sizeof(PP_MSG_SYNC_A));
-			return -EBADE;
+			return -EBADMSG;
 		}
 		PP_DEBUG("SERVER: synced\n");
 	}
@@ -599,7 +599,7 @@ int pp_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 			return ret;
 		if (ret < PP_MSG_LEN_CNT) {
 			PP_ERR("CLIENT: bad length of sent data (len=%d/%d)", ret, PP_MSG_LEN_CNT);
-			return -EBADE;
+			return -EBADMSG;
 		}
 		PP_DEBUG("CLIENT: sent count ...\n");
 
@@ -608,7 +608,7 @@ int pp_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 			return ret;
 		if (ret < sizeof(PP_MSG_CHECK_CNT_OK)) {
 			PP_ERR("CLIENT: bad length of received data (len=%d/%zu)", ret, sizeof(PP_MSG_CHECK_CNT_OK));
-			return -EBADE;
+			return -EBADMSG;
 		}
 
 		if (strcmp(ct->ctrl_buf, PP_MSG_CHECK_CNT_OK)) {
@@ -625,7 +625,7 @@ int pp_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 			return ret;
 		if (ret < PP_MSG_LEN_CNT) {
 			PP_ERR("SERVER: bad length of received data (len=%d/%d)", ret, PP_MSG_LEN_CNT);
-			return -EBADE;
+			return -EBADMSG;
 		}
 		ct->cnt_ack_msg = parse_ulong(ct->ctrl_buf, -1);
 		PP_DEBUG("SERVER: received count = <%ld> (len=%lu)\n", ct->cnt_ack_msg, strlen(ct->ctrl_buf));
@@ -636,7 +636,7 @@ int pp_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 			return ret;
 		if (ret < sizeof(PP_MSG_CHECK_CNT_OK)) {
 			PP_ERR("CLIENT: bad length of received data (len=%d/%zu)", ret, sizeof(PP_MSG_CHECK_CNT_OK));
-			return -EBADE;
+			return -EBADMSG;
 		}
 		PP_DEBUG("SERVER: acked count to client\n");
 	}
