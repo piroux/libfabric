@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2013-2015 Intel Corporation.  All rights reserved.
  * Copyright (c) 2014-2016, Cisco Systems, Inc. All rights reserved.
+ * Copyright (c) 2015 Los Alamos Nat. Security, LLC. All rights reserved.
  * Copyright (c) 2016 Cray Inc.  All rights reserved.
  *
  * This software is available to you under the BSD license below:
@@ -47,6 +48,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/time.h>
 
 #include <rdma/fabric.h>
 #include <rdma/fi_cm.h>
@@ -192,6 +194,25 @@ struct ct_pingpong {
 
 static const char integ_alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 static const int integ_alphabet_length = (sizeof(integ_alphabet)/sizeof(*integ_alphabet)) - 1;
+
+/*******************************************************************************************/
+/*                                  Compatibility methods                                  */
+/*******************************************************************************************/
+
+#ifdef __APPLE__
+int clock_gettime(clockid_t clk_id, struct timespec *tp) {
+	int retval;
+	struct timeval tv;
+
+	retval = gettimeofday(&tv, NULL);
+
+	tp->tv_sec = tv.tv_sec;
+	tp->tv_nsec = tv.tv_usec * 1000;
+
+	return retval;
+}
+#endif
+
 
 /*******************************************************************************************/
 /*                                         Utils                                           */
