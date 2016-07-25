@@ -39,6 +39,7 @@
 #include <inttypes.h>
 #include <netdb.h>
 #include <poll.h>
+#include <limits.h>
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -491,6 +492,8 @@ int pp_ctrl_txrx_data_port(struct ct_pingpong *ct)
 		if (ret < 0)
 			return ret;
 		ct->data_default_port = (int) parse_ulong(ct->ctrl_buf, (1 << 16) - 1);
+		if (ct->data_default_port < 0)
+			return ret;
 		PP_DEBUG("CLIENT: received port = <%d> (len=%lu)\n", ct->data_default_port, strlen(ct->ctrl_buf));
 
 		snprintf(ct->ctrl_buf, sizeof(PP_MSG_CHECK_PORT_OK) , "%s", PP_MSG_CHECK_PORT_OK);
@@ -628,6 +631,8 @@ int pp_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 			return -EBADMSG;
 		}
 		ct->cnt_ack_msg = parse_ulong(ct->ctrl_buf, -1);
+		if (ct->cnt_ack_msg < 0)
+			return ret;
 		PP_DEBUG("SERVER: received count = <%ld> (len=%lu)\n", ct->cnt_ack_msg, strlen(ct->ctrl_buf));
 
 		snprintf(ct->ctrl_buf, sizeof(PP_MSG_CHECK_CNT_OK), "%s", PP_MSG_CHECK_CNT_OK);
@@ -1932,7 +1937,7 @@ void pp_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 	/* Iterations */
 	case 'I':
 		ct->opts.options |= PP_OPT_ITER;
-		ct->opts.iterations = (int) parse_ulong(optarg, (2 << 31) - 1);
+		ct->opts.iterations = (int) parse_ulong(optarg, INT_MAX);
 		if (ct->opts.iterations < 0)
 			ct->opts.iterations = 0;
 		break;
@@ -1943,7 +1948,7 @@ void pp_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 			ct->opts.sizes_enabled = PP_ENABLE_ALL;
 		} else {
 			ct->opts.options |= PP_OPT_SIZE;
-			ct->opts.transfer_size = (int) parse_ulong(optarg, (2 << 31) - 1);
+			ct->opts.transfer_size = (int) parse_ulong(optarg, INT_MAX);
 		}
 		break;
 	
