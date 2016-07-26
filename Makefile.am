@@ -305,12 +305,10 @@ dist-hook: libfabric.spec
 	"$(top_srcdir)/config/distscript.pl" "$(distdir)" "$(PACKAGE_VERSION)"
 
 TESTS = \
-	util/fi_info \
-	util/fi_pingpong
+	util/fi_info
 
 test:
 	./util/fi_info
-	./util/fi_pingpong
 
 rpm: dist
 	LDFLAGS=-Wl,--build-id rpmbuild -ta libfabric-$(PACKAGE_VERSION).tar.bz2
