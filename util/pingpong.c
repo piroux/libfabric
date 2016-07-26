@@ -2206,7 +2206,7 @@ int main(int argc, char **argv)
 		if (ct.opts.options & PP_OPT_SIZE)
 			ct.hints->ep_attr->max_msg_size = ct.opts.transfer_size;
 		ct.hints->caps = FI_MSG;
-		ct.hints->mode |= FI_LOCAL_MR;
+		ct.hints->mode = FI_LOCAL_MR;
 		ret = run_pingpong_dgram(&ct);
 		break;
 	case FI_EP_RDM:
