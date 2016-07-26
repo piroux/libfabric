@@ -194,7 +194,7 @@ struct ct_pingpong {
 };
 
 static const char integ_alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-static const int integ_alphabet_length = (sizeof(integ_alphabet)/sizeof(*integ_alphabet)) - 1;
+static const int integ_alphabet_length = (sizeof(integ_alphabet)/sizeof(*integ_alphabet)) - 1; // without '\0'
 
 /*******************************************************************************************/
 /*                                  Compatibility methods                                  */
