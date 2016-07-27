@@ -1778,7 +1778,7 @@ void pp_init_ct_pingpong(struct ct_pingpong *ct)
 
 void pp_free_res(struct ct_pingpong *ct)
 {
-	PP_DEBUG("Freeing ressources of test suite ...\n");
+	PP_DEBUG("Freeing resources of test suite ...\n");
 
 	if (ct->mr != &(ct->no_mr))
 		PP_CLOSE_FID(ct->mr);
@@ -2107,7 +2107,7 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 	int i, ret, sizes_cnt;
 	int *sizes = NULL;
 
-	PP_DEBUG("Selected endpoint : DGRAM\n");
+	PP_DEBUG("Selected endpoint : MSG\n");
 
 	ret = pp_ctrl_init(ct);
 	if (ret) {
