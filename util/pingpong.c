@@ -126,10 +126,10 @@ struct pp_opts {
 			__FILE__, __LINE__, ##__VA_ARGS__);		\
 	} while (0)							\
 
-int PP_ACTIVATE_DEBUG = 0;
+int pp_debug = 0;
 
 #define PP_DEBUG(fmt, ...)						\
-	if (PP_ACTIVATE_DEBUG) {					\
+	if (pp_debug) {							\
 		fprintf(stderr, "[%s] %s:%-4d: " fmt, "debug",		\
 			__FILE__, __LINE__, ##__VA_ARGS__);		\
 	}								\
@@ -430,7 +430,7 @@ int pp_ctrl_send(struct ct_pingpong *ct, char *buf, size_t size)
 		return err;
 	}
 	PP_DEBUG("----> sent (%d/%ld) : \"", ret, size);
-	if (PP_ACTIVATE_DEBUG) {
+	if (pp_debug) {
 		int i;
 		for (i = 0; i < size; i++) {
 			fprintf(stderr, "%c.", buf[i]);
@@ -457,7 +457,7 @@ int pp_ctrl_recv(struct ct_pingpong *ct, char *buf, size_t size)
 		return err;
 	}
 	PP_DEBUG("----> received (%d/%ld) : \"", ret, size);
-	if (PP_ACTIVATE_DEBUG) {
+	if (pp_debug) {
 		int i;
 		for (i = 0; i < size; i++) {
 			fprintf(stderr, "%c.", buf[i]);
@@ -2183,7 +2183,7 @@ int main(int argc, char **argv)
 			pp_parse_opts(&ct, op, optarg);
 			break;
 		case 'd':
-			PP_ACTIVATE_DEBUG = 1;
+			pp_debug = 1;
 			break;
 		case '?':
 		case 'h':
