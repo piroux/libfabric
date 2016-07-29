@@ -976,9 +976,9 @@ void show_perf(char *name, int tsize, int sent, int acked, struct timespec *star
 	if (sent == acked) {
 		printf("=%-8s", cnt_str(str, acked));
 	} else if (sent < acked) {
-		printf("-%-8s", cnt_str(str, abs(acked - sent)));
+		printf("-%-8s", cnt_str(str, acked - sent));
 	} else {
-		printf("+%-8s", cnt_str(str, abs(acked - sent)));
+		printf("+%-8s", cnt_str(str, sent - acked));
 	}
 
 	printf("%-8s", size_str(str, bytes));
