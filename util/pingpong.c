@@ -764,6 +764,11 @@ static int pp_getsrcaddr(char *node, char *service, struct fi_info *hints)
 		PP_PRINTERR("fi_getinfo", ret);
 		return ret;
 	}
+	if (!info->src_addr) {
+		PP_ERR("fi_getinfo returned an invalid fi_info: src_addr is NULL");
+		ret = -EINVAL;
+		goto err;
+	}
 
 	hints->src_addrlen = info->src_addrlen;
 	hints->src_addr = calloc(1, hints->src_addrlen);
@@ -773,12 +778,8 @@ static int pp_getsrcaddr(char *node, char *service, struct fi_info *hints)
 		goto err;
 	}
 
+	/* Both src_addr have already been checked */
 	memcpy(hints->src_addr, info->src_addr, hints->src_addrlen);
-	if (!hints->src_addr) {
-		ret = -errno;
-		PP_PRINTERR("memcpy", ret);
-		goto err;
-	}
 
 err:
 	fi_freeinfo(info);
