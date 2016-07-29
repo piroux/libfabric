@@ -793,7 +793,7 @@ int pp_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struc
 		if (opts->src_addr) {
 			ret = pp_getsrcaddr(opts->src_addr, opts->src_port, hints);
 			if (ret) {
-				PP_ERR("Trying to get the source address for the client");
+				PP_ERR("Failed to retrieve/bind the source address for the client");
 				return ret;
 			}
 		}
