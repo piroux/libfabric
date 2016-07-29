@@ -879,7 +879,8 @@ int generate_test_sizes(struct pp_opts *opts, size_t provider_maximum, int **siz
 /*                                    Performance output                                   */
 /*******************************************************************************************/
 
-char *size_str(char str[PP_STR_LEN], long long size)
+/* str must be an allocated buffer of PP_STR_LEN bytes */
+char *size_str(char *str, long long size)
 {
 	long long base, fraction = 0;
 	char mag;
@@ -911,7 +912,8 @@ char *size_str(char str[PP_STR_LEN], long long size)
 	return str;
 }
 
-char *cnt_str(char str[PP_STR_LEN], long long cnt)
+/* str must be an allocated buffer of PP_STR_LEN bytes */
+char *cnt_str(char *str, long long cnt)
 {
 	if (cnt >= 1000000000)
 		snprintf(str, PP_STR_LEN, "%lldb", cnt / 1000000000);
