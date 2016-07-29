@@ -161,17 +161,13 @@ struct ct_pingpong {
 
 	struct fid_mr no_mr;
 	struct fi_context tx_ctx, rx_ctx;
-	struct fi_context *ctx_arr;
 	uint64_t remote_cq_data;
 
 	uint64_t tx_seq, rx_seq, tx_cq_cntr, rx_cq_cntr;
-	int pp_parent_proc;
-	pid_t pp_child_pid;
 
 	fi_addr_t remote_fi_addr;
 	void *buf, *tx_buf, *rx_buf;
 	size_t buf_size, tx_size, rx_size;
-	int rx_fd, tx_fd;
 	int data_default_port;
 	char data_port[8];
 
@@ -1728,16 +1724,12 @@ void pp_init_ct_pingpong(struct ct_pingpong *ct)
 	ct->av = NULL;
 	ct->eq = NULL;
 
-	ct->ctx_arr = NULL;
 	ct->remote_cq_data = 0;
 
 	ct->tx_seq = 0;
 	ct->rx_seq = 0;
 	ct->tx_cq_cntr = 0;
 	ct->rx_cq_cntr = 0;
-
-	ct->pp_parent_proc = 0;
-	ct->pp_child_pid = 0;
 
 	ct->remote_fi_addr = FI_ADDR_UNSPEC;
 	ct->buf = NULL;
@@ -1747,8 +1739,6 @@ void pp_init_ct_pingpong(struct ct_pingpong *ct)
 	ct->buf_size = 0;
 	ct->tx_size = 0;
 	ct->rx_size = 0;
-	ct->rx_fd = -1;
-	ct->tx_fd = -1;
 
 	strncpy(ct->test_name, "custom", 50);
 	ct->timeout = -1;
@@ -1790,11 +1780,6 @@ void pp_free_res(struct ct_pingpong *ct)
 	PP_CLOSE_FID(ct->eq);
 	PP_CLOSE_FID(ct->domain);
 	PP_CLOSE_FID(ct->fabric);
-
-	if (ct->ctx_arr) {
-		free(ct->ctx_arr);
-		ct->ctx_arr = NULL;
-	}
 
 	if (ct->buf) {
 		free(ct->buf);
