@@ -210,7 +210,6 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp) {
 }
 #endif
 
-
 /*******************************************************************************************/
 /*                                         Utils                                           */
 /*******************************************************************************************/
@@ -226,13 +225,13 @@ long parse_ulong(char *str, long max) {
 			ret = -EINVAL;
 		else
 			ret = -errno;
-		fprintf(stderr, "Error parsing \"%s\" : %s\n", str, strerror(-ret));
+		fprintf(stderr, "Error parsing \"%s\": %s\n", str, strerror(-ret));
 		return ret;
 	}
 
 	if ((ret < 0) || (max > 0 && ret > max)) {
 		ret = -ERANGE;
-		fprintf(stderr, "Error parsing \"%s\" : %s\n", str, strerror(-ret));
+		fprintf(stderr, "Error parsing \"%s\": %s\n", str, strerror(-ret));
 		return -ERANGE;
 	}
 	return ret;
@@ -263,20 +262,20 @@ void pp_banner_fabric_info(struct ct_pingpong *ct)
 {
 	PP_DEBUG("Running pingpong test with the %s endpoint trough a %s provider ...\n", ep_name(ct->fi->ep_attr->type), ct->fi->fabric_attr->prov_name);
 	PP_DEBUG(" * Fabric Attributes:\n");
-	PP_DEBUG("  - %-20s : %s\n", "name", ct->fi->fabric_attr->name);
-	PP_DEBUG("  - %-20s : %s\n", "prov_name", ct->fi->fabric_attr->prov_name);
-	PP_DEBUG("  - %-20s : %"PRIu32"\n", "prov_version", ct->fi->fabric_attr->prov_version);
+	PP_DEBUG("  - %-20s: %s\n", "name", ct->fi->fabric_attr->name);
+	PP_DEBUG("  - %-20s: %s\n", "prov_name", ct->fi->fabric_attr->prov_name);
+	PP_DEBUG("  - %-20s: %"PRIu32"\n", "prov_version", ct->fi->fabric_attr->prov_version);
 	PP_DEBUG(" * Domain Attributes:\n");
-	PP_DEBUG("  - %-20s : %s\n", "name", ct->fi->domain_attr->name);
-	PP_DEBUG("  - %-20s : %zu\n", "cq_cnt", ct->fi->domain_attr->cq_cnt);
-	PP_DEBUG("  - %-20s : %zu\n", "cq_data_size", ct->fi->domain_attr->cq_data_size);
-	PP_DEBUG("  - %-20s : %zu\n", "ep_cnt", ct->fi->domain_attr->ep_cnt);
+	PP_DEBUG("  - %-20s: %s\n", "name", ct->fi->domain_attr->name);
+	PP_DEBUG("  - %-20s: %zu\n", "cq_cnt", ct->fi->domain_attr->cq_cnt);
+	PP_DEBUG("  - %-20s: %zu\n", "cq_data_size", ct->fi->domain_attr->cq_data_size);
+	PP_DEBUG("  - %-20s: %zu\n", "ep_cnt", ct->fi->domain_attr->ep_cnt);
 	PP_DEBUG(" * Endpoint Attributes:\n");
-	PP_DEBUG("  - %-20s : %s\n", "type", ep_name(ct->fi->ep_attr->type));
-	PP_DEBUG("  - %-20s : %"PRIu32"\n", "protocol", ct->fi->ep_attr->protocol);
-	PP_DEBUG("  - %-20s : %"PRIu32"\n", "protocol_version", ct->fi->ep_attr->protocol_version);
-	PP_DEBUG("  - %-20s : %zu\n", "max_msg_size", ct->fi->ep_attr->max_msg_size);
-	PP_DEBUG("  - %-20s : %zu\n", "max_order_raw_size", ct->fi->ep_attr->max_order_raw_size);
+	PP_DEBUG("  - %-20s: %s\n", "type", ep_name(ct->fi->ep_attr->type));
+	PP_DEBUG("  - %-20s: %"PRIu32"\n", "protocol", ct->fi->ep_attr->protocol);
+	PP_DEBUG("  - %-20s: %"PRIu32"\n", "protocol_version", ct->fi->ep_attr->protocol_version);
+	PP_DEBUG("  - %-20s: %zu\n", "max_msg_size", ct->fi->ep_attr->max_msg_size);
+	PP_DEBUG("  - %-20s: %zu\n", "max_order_raw_size", ct->fi->ep_attr->max_order_raw_size);
 }
 
 void pp_banner_options(struct ct_pingpong *ct)
@@ -300,20 +299,20 @@ void pp_banner_options(struct ct_pingpong *ct)
 		snprintf(size_msg, 50, "selected size = %d", opts.transfer_size);
 
 	if (opts.options & PP_OPT_ITER)
-		snprintf(iter_msg, 50, "selected iterations : %d", opts.iterations);
+		snprintf(iter_msg, 50, "selected iterations: %d", opts.iterations);
 	else {
 		opts.iterations = size_to_count(opts.transfer_size);
-		snprintf(iter_msg, 50, "default iterations : %d", opts.iterations);
+		snprintf(iter_msg, 50, "default iterations: %d", opts.iterations);
 	}
 
-	PP_DEBUG(" * PingPong options :\n");
-	PP_DEBUG("  - %-20s : [%s]\n", "src_addr", opts.src_addr);
-	PP_DEBUG("  - %-20s : [%s]\n", "src_port", opts.src_port);
-	PP_DEBUG("  - %-20s : [%s]\n", "dst_addr", opts.dst_addr);
-	PP_DEBUG("  - %-20s : [%s]\n", "dst_port", opts.dst_port);
-	PP_DEBUG("  - %-20s : %s\n", "sizes_enabled", size_msg);
-	PP_DEBUG("  - %-20s : %s\n", "iterations", iter_msg);
-	PP_DEBUG("  - %-20s : %s\n", "provider", ct->hints->fabric_attr->prov_name);
+	PP_DEBUG(" * PingPong options:\n");
+	PP_DEBUG("  - %-20s: [%s]\n", "src_addr", opts.src_addr);
+	PP_DEBUG("  - %-20s: [%s]\n", "src_port", opts.src_port);
+	PP_DEBUG("  - %-20s: [%s]\n", "dst_addr", opts.dst_addr);
+	PP_DEBUG("  - %-20s: [%s]\n", "dst_port", opts.dst_port);
+	PP_DEBUG("  - %-20s: %s\n", "sizes_enabled", size_msg);
+	PP_DEBUG("  - %-20s: %s\n", "iterations", iter_msg);
+	PP_DEBUG("  - %-20s: %s\n", "provider", ct->hints->fabric_attr->prov_name);
 }
 
 /*******************************************************************************************/
@@ -422,10 +421,10 @@ int pp_ctrl_send(struct ct_pingpong *ct, char *buf, size_t size)
 	}
 	if (ret == 0) {
 		err = -ECONNABORTED;
-		PP_ERR("ctrl/read : no data or remote connection closed");
+		PP_ERR("ctrl/read: no data or remote connection closed");
 		return err;
 	}
-	PP_DEBUG("----> sent (%d/%ld) : \"", ret, size);
+	PP_DEBUG("----> sent (%d/%ld): \"", ret, size);
 	if (pp_debug) {
 		int i;
 		for (i = 0; i < size; i++) {
@@ -449,10 +448,10 @@ int pp_ctrl_recv(struct ct_pingpong *ct, char *buf, size_t size)
 	}
 	if (ret == 0) {
 		err = -ECONNABORTED;
-		PP_ERR("ctrl/read : no data or remote connection closed");
+		PP_ERR("ctrl/read: no data or remote connection closed");
 		return err;
 	}
-	PP_DEBUG("----> received (%d/%ld) : \"", ret, size);
+	PP_DEBUG("----> received (%d/%ld): \"", ret, size);
 	if (pp_debug) {
 		int i;
 		for (i = 0; i < size; i++) {
@@ -512,7 +511,7 @@ int pp_ctrl_txrx_data_port(struct ct_pingpong *ct)
 			return ret;
 
 		if (strcmp(ct->ctrl_buf, PP_MSG_CHECK_PORT_OK)) {
-			PP_DEBUG("SERVER: error while client acking the port : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+			PP_DEBUG("SERVER: error while client acking the port: <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 			return -EBADMSG;
 		}
 		PP_DEBUG("SERVER: port acked by client\n");
@@ -549,7 +548,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 			return ret;
 		if (strcmp(ct->ctrl_buf, PP_MSG_SYNC_A)) {
 			ct->ctrl_buf[PP_CTRL_BUF_LEN] = '\0';
-			PP_DEBUG("CLIENT: sync error while acking A : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+			PP_DEBUG("CLIENT: sync error while acking A: <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 			return -EBADMSG;
 		}
 		PP_DEBUG("CLIENT: synced\n");
@@ -560,7 +559,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 			return ret;
 		if (strcmp(ct->ctrl_buf, PP_MSG_SYNC_Q)) {
 			ct->ctrl_buf[PP_CTRL_BUF_LEN] = '\0';
-			PP_DEBUG("SERVER: sync error while acking Q : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+			PP_DEBUG("SERVER: sync error while acking Q: <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 			return -EBADMSG;
 		}
 
@@ -611,7 +610,7 @@ int pp_ctrl_txrx_msg_count(struct ct_pingpong *ct)
 		}
 
 		if (strcmp(ct->ctrl_buf, PP_MSG_CHECK_CNT_OK)) {
-			PP_DEBUG("CLIENT: error while server acking the count : <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
+			PP_DEBUG("CLIENT: error while server acking the count: <%s> (len=%lu)\n", ct->ctrl_buf, strlen(ct->ctrl_buf));
 			return ret;
 		}
 		PP_DEBUG("CLIENT: count acked by server\n");
@@ -711,7 +710,7 @@ int pp_check_buf(void *buf, int size)
 			break;
 	}
 	if (i != size) {
-		PP_DEBUG("Finished veryfing buffer : content is corrupted\n");
+		PP_DEBUG("Finished veryfing buffer: content is corrupted\n");
 		printf("Error at iteration=%d size=%d byte=%d\n",
 			iter, size, i);
 		return 1;
@@ -725,7 +724,6 @@ int pp_check_buf(void *buf, int size)
 /*******************************************************************************************/
 /*                                      Error handling                                     */
 /*******************************************************************************************/
-
 
 void eq_readerr(struct fid_eq *eq)
 {
@@ -816,7 +814,6 @@ int pp_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struc
 
 	return 0;
 }
-
 
 /*******************************************************************************************/
 /*                                       Test sizes                                        */
@@ -970,16 +967,14 @@ void show_perf(char *name, int tsize, int sent, int acked, struct timespec *star
 	}
 
 	printf("%-8s", size_str(str, tsize));
-
 	printf("%-8s", cnt_str(str, sent));
 
-	if (sent == acked) {
+	if (sent == acked)
 		printf("=%-8s", cnt_str(str, acked));
-	} else if (sent < acked) {
+	else if (sent < acked)
 		printf("-%-8s", cnt_str(str, acked - sent));
-	} else {
+	else
 		printf("+%-8s", cnt_str(str, sent - acked));
-	}
 
 	printf("%-8s", size_str(str, bytes));
 
@@ -1274,7 +1269,7 @@ int pp_open_fabric_res(struct ct_pingpong *ct)
 {
 	int ret;
 
-	PP_DEBUG("Opening fabric resources : fabric, eq & domain\n");
+	PP_DEBUG("Opening fabric resources: fabric, eq & domain\n");
 
 	ret = fi_fabric(ct->fi->fabric_attr, &(ct->fabric), NULL);
 	if (ret) {
@@ -2012,7 +2007,7 @@ int pingpong(struct ct_pingpong *ct)
 	if (ret)
 		return ret;
 
-	PP_DEBUG("Results :\n");
+	PP_DEBUG("Results:\n");
 	show_perf(NULL, ct->opts.transfer_size, ct->opts.iterations, ct->cnt_ack_msg, &(ct->start), &(ct->end), 2);
 
 	PP_DEBUG("PingPong test successfuly handled\n");
@@ -2024,7 +2019,7 @@ static int run_pingpong_dgram(struct ct_pingpong *ct)
 	int i, ret, sizes_cnt;
 	int *sizes = NULL;
 
-	PP_DEBUG("Selected endpoint : DGRAM\n");
+	PP_DEBUG("Selected endpoint: DGRAM\n");
 
 	ret = pp_init_fabric(ct);
 	if (ret)
@@ -2037,12 +2032,12 @@ static int run_pingpong_dgram(struct ct_pingpong *ct)
 
 	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, PP_SIZE_MAX_POWER_TWO);
 
-	PP_DEBUG("Count of sizes to test : %d\n", sizes_cnt);
+	PP_DEBUG("Count of sizes to test: %d\n", sizes_cnt);
 
 	for (i = 0; i < sizes_cnt; i++) {
 		ct->opts.transfer_size = sizes[i];
 		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size) {
-			PP_DEBUG("Transfer size too high for endpoint : %d\n", ct->opts.transfer_size);
+			PP_DEBUG("Transfer size too high for endpoint: %d\n", ct->opts.transfer_size);
 			continue;
 		}
 		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
@@ -2061,7 +2056,7 @@ static int run_pingpong_rdm(struct ct_pingpong *ct)
 	int i, ret, sizes_cnt;
 	int *sizes = NULL;
 
-	PP_DEBUG("Selected endpoint : RDM\n");
+	PP_DEBUG("Selected endpoint: RDM\n");
 
 	ret = pp_init_fabric(ct);
 	if (ret)
@@ -2071,12 +2066,12 @@ static int run_pingpong_rdm(struct ct_pingpong *ct)
 
 	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, PP_SIZE_MAX_POWER_TWO);
 
-	PP_DEBUG("Count of sizes to test : %d\n", sizes_cnt);
+	PP_DEBUG("Count of sizes to test: %d\n", sizes_cnt);
 
 	for (i = 0; i < sizes_cnt; i++) {
 		ct->opts.transfer_size = sizes[i];
 		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size) {
-			PP_DEBUG("Transfer size too high for endpoint : %d\n", ct->opts.transfer_size);
+			PP_DEBUG("Transfer size too high for endpoint: %d\n", ct->opts.transfer_size);
 			continue;
 		}
 		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
@@ -2095,7 +2090,7 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 	int i, ret, sizes_cnt;
 	int *sizes = NULL;
 
-	PP_DEBUG("Selected endpoint : MSG\n");
+	PP_DEBUG("Selected endpoint: MSG\n");
 
 	ret = pp_ctrl_init(ct);
 	if (ret) {
@@ -2122,12 +2117,12 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 
 	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, PP_SIZE_MAX_POWER_TWO);
 
-	PP_DEBUG("Count of sizes to test : %d\n", sizes_cnt);
+	PP_DEBUG("Count of sizes to test: %d\n", sizes_cnt);
 
 	for (i = 0; i < sizes_cnt; i++) {
 		ct->opts.transfer_size = sizes[i];
 		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size) {
-			PP_DEBUG("Transfer size too high for endpoint : %d\n", ct->opts.transfer_size);
+			PP_DEBUG("Transfer size too high for endpoint: %d\n", ct->opts.transfer_size);
 			continue;
 		}
 		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
@@ -2208,7 +2203,7 @@ int main(int argc, char **argv)
 		ret = run_pingpong_msg(&ct);
 		break;
 	default:
-		fprintf(stderr, "Endpoint unsupported : %d\n", ct.hints->ep_attr->type);
+		fprintf(stderr, "Endpoint unsupported: %d\n", ct.hints->ep_attr->type);
 		ret = EXIT_FAILURE;
 	}
 
