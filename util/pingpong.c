@@ -2014,10 +2014,38 @@ int pingpong(struct ct_pingpong *ct)
 	return 0;
 }
 
+int run_suite_pingpong(struct ct_pingpong *ct)
+{
+	int i, sizes_cnt;
+	int ret = 0;
+	int *sizes = NULL;
+
+	pp_banner_fabric_info(ct);
+
+	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, PP_SIZE_MAX_POWER_TWO);
+
+	PP_DEBUG("Count of sizes to test: %d\n", sizes_cnt);
+
+	for (i = 0; i < sizes_cnt; i++) {
+		ct->opts.transfer_size = sizes[i];
+		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size) {
+			PP_DEBUG("Transfer size too high for endpoint: %d\n", ct->opts.transfer_size);
+			continue;
+		}
+		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
+		ret = pingpong(ct);
+		if (ret)
+			goto out;
+	}
+
+out:
+	free(sizes);
+	return ret;
+}
+
 static int run_pingpong_dgram(struct ct_pingpong *ct)
 {
-	int i, ret, sizes_cnt;
-	int *sizes = NULL;
+	int ret;
 
 	PP_DEBUG("Selected endpoint: DGRAM\n");
 
@@ -2028,33 +2056,16 @@ static int run_pingpong_dgram(struct ct_pingpong *ct)
 	/* Post an extra receive to avoid lacking a posted receive in the finalize. */
 	ret = fi_recv(ct->ep, ct->rx_buf, ct->rx_size, fi_mr_desc(ct->mr), 0, &ct->rx_ctx);
 
-	pp_banner_fabric_info(ct);
-
-	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, PP_SIZE_MAX_POWER_TWO);
-
-	PP_DEBUG("Count of sizes to test: %d\n", sizes_cnt);
-
-	for (i = 0; i < sizes_cnt; i++) {
-		ct->opts.transfer_size = sizes[i];
-		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size) {
-			PP_DEBUG("Transfer size too high for endpoint: %d\n", ct->opts.transfer_size);
-			continue;
-		}
-		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
-		ret = pingpong(ct);
-		if (ret)
-			return ret;
-	}
-
-	free(sizes);
+	ret = run_suite_pingpong(ct);
+	if (ret)
+		return ret;
 
 	return pp_finalize(ct);
 }
 
 static int run_pingpong_rdm(struct ct_pingpong *ct)
 {
-	int i, ret, sizes_cnt;
-	int *sizes = NULL;
+	int ret;
 
 	PP_DEBUG("Selected endpoint: RDM\n");
 
@@ -2062,33 +2073,16 @@ static int run_pingpong_rdm(struct ct_pingpong *ct)
 	if (ret)
 		return ret;
 
-	pp_banner_fabric_info(ct);
-
-	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, PP_SIZE_MAX_POWER_TWO);
-
-	PP_DEBUG("Count of sizes to test: %d\n", sizes_cnt);
-
-	for (i = 0; i < sizes_cnt; i++) {
-		ct->opts.transfer_size = sizes[i];
-		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size) {
-			PP_DEBUG("Transfer size too high for endpoint: %d\n", ct->opts.transfer_size);
-			continue;
-		}
-		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
-		ret = pingpong(ct);
-		if (ret)
-			return ret;
-	}
-
-	free(sizes);
+	ret = run_suite_pingpong(ct);
+	if (ret)
+		return ret;
 
 	return pp_finalize(ct);
 }
 
 static int run_pingpong_msg(struct ct_pingpong *ct)
 {
-	int i, ret, sizes_cnt;
-	int *sizes = NULL;
+	int ret;
 
 	PP_DEBUG("Selected endpoint: MSG\n");
 
@@ -2113,27 +2107,12 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 		return ret;
 	}
 
-	pp_banner_fabric_info(ct);
-
-	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, PP_SIZE_MAX_POWER_TWO);
-
-	PP_DEBUG("Count of sizes to test: %d\n", sizes_cnt);
-
-	for (i = 0; i < sizes_cnt; i++) {
-		ct->opts.transfer_size = sizes[i];
-		if (ct->opts.transfer_size > ct->fi->ep_attr->max_msg_size) {
-			PP_DEBUG("Transfer size too high for endpoint: %d\n", ct->opts.transfer_size);
-			continue;
-		}
-		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
-		ret = pingpong(ct);
-		if (ret)
-			goto out;
-	}
-
-	free(sizes);
+	ret = run_suite_pingpong(ct);
+	if (ret)
+		goto out;
 
 	ret = pp_finalize(ct);
+
 out:
 	fi_shutdown(ct->ep, 0);
 	return ret;
