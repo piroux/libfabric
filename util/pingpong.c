@@ -95,7 +95,7 @@ struct pp_opts {
 };
 
 #define PP_SIZE_MAX_POWER_TWO 22
-#define PP_MAX_DATA_MSG (1 << (PP_SIZE_MAX_POWER_TWO + 1)) + (1 << PP_SIZE_MAX_POWER_TWO);
+#define PP_MAX_DATA_MSG (1 << PP_SIZE_MAX_POWER_TWO ) + (1 << (PP_SIZE_MAX_POWER_TWO - 1));
 
 #define PP_STR_LEN 32
 #define PP_MAX_CTRL_MSG 64
@@ -819,7 +819,7 @@ int pp_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struc
 /*                                       Test sizes                                        */
 /*******************************************************************************************/
 
-int generate_test_sizes(struct pp_opts *opts, size_t provider_maximum, int **sizes_, int size_power_two_max)
+int generate_test_sizes(struct pp_opts *opts, size_t tx_size, int **sizes_)
 {
 	int defaults[6] = {64, 256, 1024, 4096, 655616, 1048576};
 	int power_of_two;
@@ -835,31 +835,31 @@ int generate_test_sizes(struct pp_opts *opts, size_t provider_maximum, int **siz
 	*sizes_ = sizes;
 
 	if (opts->options & PP_OPT_SIZE) {
-		if (opts->transfer_size > provider_maximum)
+		if (opts->transfer_size > tx_size)
 			return 0;
 
 		sizes[0] = opts->transfer_size;
 		n = 1;
 	} else if (opts->sizes_enabled != PP_ENABLE_ALL) {
 		for (int i = 0; i < (sizeof defaults / sizeof defaults[0]); i++) {
-			if (defaults[i] > provider_maximum)
+			if (defaults[i] > tx_size)
 				break;
 
 			sizes[i] = defaults[i];
 			n++;
 		}
 	} else {
-		for (int i = 0; i < size_power_two_max; i++) {
-			power_of_two = (1 << (i + 1));
-			half_up = power_of_two + (power_of_two / 2);
+		for (int i = 0;; i++) {
+			power_of_two = (i == 0) ? 0 : (1 << i);
+			half_up = (i == 0) ? 1 : power_of_two + (power_of_two / 2);
 
-			if (power_of_two > provider_maximum)
+			if (power_of_two > tx_size)
 				break;
 
 			sizes[i * 2] = power_of_two;
 			n++;
 
-			if (half_up > provider_maximum)
+			if (half_up > tx_size)
 				break;
 
 			sizes[(i * 2) + 1] = half_up;
@@ -2021,7 +2021,7 @@ int run_suite_pingpong(struct ct_pingpong *ct)
 
 	pp_banner_fabric_info(ct);
 
-	sizes_cnt = generate_test_sizes(&ct->opts, ct->fi->ep_attr->max_msg_size, &sizes, PP_SIZE_MAX_POWER_TWO);
+	sizes_cnt = generate_test_sizes(&ct->opts, ct->tx_size, &sizes);
 
 	PP_DEBUG("Count of sizes to test: %d\n", sizes_cnt);
 
