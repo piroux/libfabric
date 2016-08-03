@@ -319,10 +319,45 @@ void pp_banner_options(struct ct_pingpong *ct)
 /*                                   Control Messaging                                     */
 /*******************************************************************************************/
 
+int pp_getaddrinfo(char *name, int port, struct addrinfo **results)
+{
+	//struct in_addr **addr_list;
+	struct addrinfo hints;
+	//struct addrinfo *results;
+	int ret;
+	const char *err_msg;
+	char port_s[6];
+
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_INET;		/* IPv4 */
+	hints.ai_socktype = SOCK_STREAM;	/* TCP socket */
+	hints.ai_protocol = IPPROTO_TCP;	/* Any protocol */
+	hints.ai_flags = 0;			/* For wildcard IP address */
+	hints.ai_canonname = NULL;
+	hints.ai_addr = NULL;
+	hints.ai_next = NULL;
+
+	snprintf(port_s, 6, "%d", port);
+
+	ret = getaddrinfo(name, port_s, &hints, results);
+	if (ret != 0) {
+		err_msg = gai_strerror(ret);
+		PP_ERR("getaddrinfo : %s", err_msg);
+		ret = -EXIT_FAILURE;
+		goto out;
+	}
+	ret = -EXIT_SUCCESS;
+
+out:
+	return ret;
+}
+
 int pp_ctrl_init(struct ct_pingpong  *ct)
 {
-	int err, ret;
+	int ret, err, *retp;
 	struct timeval tv;
+	struct addrinfo *results, *rp;
+	char s[INET_ADDRSTRLEN];
 
 	tv.tv_sec = 5;
 	tv.tv_usec = 0;
@@ -330,28 +365,36 @@ int pp_ctrl_init(struct ct_pingpong  *ct)
 	PP_DEBUG("Initializing control messages\n");
 
 	if (ct->opts.dst_addr) {
-		ct->ctrl_connfd = socket(AF_INET, SOCK_STREAM, 0);
+		pp_getaddrinfo(ct->opts.dst_addr, ct->ctrl_port, &results);
+
+		for (rp = results; rp != NULL; rp = rp->ai_next) {
+			ct->ctrl_connfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+			if (ct->ctrl_connfd == -1)
+				continue;
+
+			memset(&ct->ctrl_addr, '\0', sizeof(ct->ctrl_addr));
+			ct->ctrl_addr.sin_family = AF_INET;
+			ct->ctrl_addr.sin_addr.s_addr = ((struct sockaddr_in *)rp->ai_addr)->sin_addr.s_addr;
+			ct->ctrl_addr.sin_port = htons(ct->ctrl_port);
+
+			retp = (int *) inet_ntop(AF_INET, (const void *)&ct->ctrl_addr.sin_addr.s_addr, s, INET_ADDRSTRLEN);
+			if (retp == NULL) {
+				err = -errno;
+				PP_PRINTERR("inet_ntop", err);
+				return err;
+			}
+			PP_DEBUG("CLIENT: connecting to <%s> (%s)\n", ct->opts.dst_addr, s);
+			ret = connect(ct->ctrl_connfd, (struct sockaddr *)&ct->ctrl_addr,
+					sizeof(ct->ctrl_addr));
+			if (ret == -1) {
+				err = errno;
+				close(ct->ctrl_connfd);
+				continue;
+			}
+			break;
+		}
 		if (ct->ctrl_connfd == -1) {
-			err = -errno;
-			PP_PRINTERR("socket", err);
-			return err;
-		}
-
-		memset(&ct->ctrl_addr, '\0', sizeof(ct->ctrl_addr));
-		ct->ctrl_addr.sin_family = AF_INET;
-		ret = inet_pton(AF_INET, ct->opts.dst_addr, &(ct->ctrl_addr.sin_addr));
-		if (ret == 0) {
-			err = -errno;
-			PP_PRINTERR("inet_pton", err);
-			return err;
-		}
-		ct->ctrl_addr.sin_port = htons(ct->ctrl_port);
-
-		PP_DEBUG("CLIENT: connecting to <%s>\n", ct->opts.dst_addr);
-		ret = connect(ct->ctrl_connfd, (struct sockaddr *)&ct->ctrl_addr, sizeof(ct->ctrl_addr));
-		if (ret == -1) {
-			err = -errno;
-			PP_PRINTERR("connect", err);
+			PP_PRINTERR("getaddrinfo/socket/connect", err);
 			return err;
 		}
 		PP_DEBUG("CLIENT: connected\n");
