@@ -1295,7 +1295,7 @@ int pp_alloc_msgs(struct ct_pingpong *ct)
 	ct->remote_cq_data = pp_init_cq_data(ct->fi);
 
 	if (ct->fi->mode & FI_LOCAL_MR) {
-		ret = fi_mr_reg(ct->domain, ct->buf, ct->buf_size, 0,
+		ret = fi_mr_reg(ct->domain, ct->buf, ct->buf_size, FI_SEND | FI_RECV,
 				0, PP_MR_KEY, 0, &(ct->mr), NULL);
 		if (ret) {
 			PP_PRINTERR("fi_mr_reg", ret);
