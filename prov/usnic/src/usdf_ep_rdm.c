@@ -59,6 +59,7 @@
 
 #include "usd.h"
 #include "usdf.h"
+#include "usnic_direct.h"
 #include "usdf_endpoint.h"
 #include "fi_ext_usnic.h"
 #include "usdf_rudp.h"
@@ -166,12 +167,12 @@ out:
 
 }
 
-int usdf_rdm_fill_dom_attr(struct fi_info *hints, struct fi_info *fi)
+int usdf_rdm_fill_dom_attr(uint32_t version, struct fi_info *hints, struct fi_info *fi, struct usd_device_attrs *dap)
 {
 	struct fi_domain_attr defaults;
 
 	defaults = rdm_dflt_domain_attr;
-	defaults.name = strdup("usnic");
+	defaults.name = usdf_domain_getname(version, dap);
 
 	if (!hints || !hints->domain_attr)
 		goto out;

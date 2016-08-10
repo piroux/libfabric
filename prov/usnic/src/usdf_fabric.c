@@ -75,11 +75,81 @@
 
 struct usdf_usnic_info *__usdf_devinfo;
 
-static int
-usdf_validate_hints(struct fi_info *hints, struct usd_device_attrs *dap)
+char *
+get_devname(uint32_t version, struct usd_device_attrs *dap)
 {
+	char *bufp;
+	struct in_addr in;
+	char *addrnetw;
+	size_t size;
+
+	if (FI_VERSION_GE(version, FI_VERSION(1, 4))) {
+		in.s_addr = dap->uda_ipaddr_be & dap->uda_netmask_be;
+		addrnetw = inet_ntoa(in);
+		size = snprintf(NULL, 0, "%s/%d", addrnetw, dap->uda_prefixlen) + 1;
+		bufp = calloc(1, size);
+		sprintf(bufp, "%s/%d", addrnetw, dap->uda_prefixlen);
+	} else {
+		bufp = strdup(dap->uda_devname);
+	}
+
+	return bufp;
+}
+
+enum check_devname_func_t {
+	CHECK_DEVNAME_GETINFO,
+	CHECK_DEVNAME_FABRIC
+};
+
+int
+check_devname(uint32_t version, struct usd_device_attrs *dap, struct fi_fabric_attr *fattrp,
+		enum check_devname_func_t caller)
+{
+	int ret;
+	char *devname;
+
+	char* devname_1_3 = get_devname(FI_VERSION(1,3), dap);
+	char* devname_1_4 = get_devname(FI_VERSION(1,4), dap);
+
+	USDF_DBG("checking devname: (version=%d) (devname='%s')\n", version, fattrp->name);
+
+	switch(caller) {
+		case CHECK_DEVNAME_GETINFO:
+			devname = get_devname(version, dap);
+			if (FI_VERSION_GE(version, FI_VERSION(1, 4))) {
+				ret = strcmp(devname, devname_1_4);
+			} else {
+				ret = strcmp(devname, devname_1_3);
+			}
+			free(devname);
+			break;
+
+		case CHECK_DEVNAME_FABRIC:
+			devname = fattrp->name;
+			ret = strcmp(devname, devname_1_4);
+			if (ret)
+				ret = strcmp(devname, devname_1_3);
+			break;
+	}
+
+
+	free(devname_1_3);
+	free(devname_1_4);
+	
+	if (ret == 0)
+		return 1;
+	else
+		return 0;
+}
+
+static int
+usdf_validate_hints(uint32_t version, struct fi_info *hints, struct usd_device_attrs *dap)
+{
+	int ret = 0;
 	struct fi_fabric_attr *fattrp;
 	size_t size;
+
+	char *devn;
 
 	switch (hints->addr_format) {
 	case FI_FORMAT_UNSPEC:
@@ -116,13 +186,19 @@ usdf_validate_hints(struct fi_info *hints, struct usd_device_attrs *dap)
 		    fattrp->prov_version != USDF_PROV_VERSION) {
 			return -FI_ENODATA;
 		}
+
+		devn = get_devname(version, dap);
+
 		if (fattrp->name != NULL &&
-                    strcmp(fattrp->name, dap->uda_devname) != 0) {
-			return -FI_ENODATA;
+                    !check_devname(version, dap, NULL, CHECK_DEVNAME_GETINFO)) {
+			USDF_DBG("devname of fabric not matching expected for version (version=%d) (devname='%s')\n", version, devn);
+			ret = -FI_ENODATA;
 		}
+
+		free(devn);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
@@ -242,7 +318,7 @@ usdf_fill_info_dgram(
 
 	/* fabric attrs */
 	fattrp = fi->fabric_attr;
-	fattrp->name = strdup(dap->uda_devname);
+	fattrp->name = get_devname(version, dap);
 	if (fattrp->name == NULL) {
 		ret = -FI_ENOMEM;
 		goto fail;
@@ -259,7 +335,7 @@ usdf_fill_info_dgram(
 	if (ret)
 		goto fail;
 
-	ret = usdf_dgram_fill_dom_attr(hints, fi);
+	ret = usdf_dgram_fill_dom_attr(version, hints, fi, dap);
 	if (ret)
 		goto fail;
 
@@ -290,6 +366,7 @@ fail:
 
 static int
 usdf_fill_info_msg(
+	uint32_t version,
 	struct fi_info *hints,
 	struct sockaddr_in *src,
 	struct sockaddr_in *dest,
@@ -341,7 +418,7 @@ usdf_fill_info_msg(
 
 	/* fabric attrs */
 	fattrp = fi->fabric_attr;
-	fattrp->name = strdup(dap->uda_devname);
+	fattrp->name = get_devname(version, dap);
 	if (fattrp->name == NULL) {
 		ret = -FI_ENOMEM;
 		goto fail;
@@ -351,7 +428,7 @@ usdf_fill_info_msg(
 	if (ret)
 		goto fail;
 
-	ret = usdf_msg_fill_dom_attr(hints, fi);
+	ret = usdf_msg_fill_dom_attr(version, hints, fi, dap);
 	if (ret)
 		goto fail;
 
@@ -382,6 +459,7 @@ fail:
 
 static int
 usdf_fill_info_rdm(
+	uint32_t version,
 	struct fi_info *hints,
 	struct sockaddr_in *src,
 	struct sockaddr_in *dest,
@@ -431,7 +509,7 @@ usdf_fill_info_rdm(
 
 	/* fabric attrs */
 	fattrp = fi->fabric_attr;
-	fattrp->name = strdup(dap->uda_devname);
+	fattrp->name = get_devname(version, dap);
 	if (fattrp->name == NULL) {
 		ret = -FI_ENOMEM;
 		goto fail;
@@ -441,7 +519,7 @@ usdf_fill_info_rdm(
 	if (ret)
 		goto fail;
 
-	ret = usdf_rdm_fill_dom_attr(hints, fi);
+	ret = usdf_rdm_fill_dom_attr(version, hints, fi, dap);
 	if (ret)
 		goto fail;
 
@@ -640,7 +718,7 @@ usdf_getinfo(uint32_t version, const char *node, const char *service,
 
 		/* Does this device match requested attributes? */
 		if (hints != NULL) {
-			ret = usdf_validate_hints(hints, dap);
+			ret = usdf_validate_hints(version, hints, dap);
 			if (ret != 0) {
 				USDF_DBG("hints do not match for %s/%s, skipping\n",
 					dap->uda_devname, dap->uda_ifname);
@@ -662,16 +740,16 @@ usdf_getinfo(uint32_t version, const char *node, const char *service,
 		}
 
 		if (ep_type == FI_EP_MSG || ep_type == FI_EP_UNSPEC) {
-			ret = usdf_fill_info_msg(hints, src, dest, dap,
-					&fi_first, &fi_last);
+			ret = usdf_fill_info_msg(version, hints, src, dest,
+					dap, &fi_first, &fi_last);
 			if (ret != 0 && ret != -FI_ENODATA) {
 				goto fail;
 			}
 		}
 
 		if (ep_type == FI_EP_RDM || ep_type == FI_EP_UNSPEC) {
-			ret = usdf_fill_info_rdm(hints, src, dest, dap,
-					&fi_first, &fi_last);
+			ret = usdf_fill_info_rdm(version, hints, src, dest,
+					dap, &fi_first, &fi_last);
 			if (ret != 0 && ret != -FI_ENODATA) {
 				goto fail;
 			}
@@ -776,7 +854,7 @@ usdf_fabric_open(struct fi_fabric_attr *fattrp, struct fid_fabric **fabric,
 	for (d = 0; d < dp->uu_num_devs; ++d) {
 		dep = &dp->uu_info[d];
 		if (dep->ue_dev_ok &&
-			strcmp(fattrp->name, dep->ue_dattr.uda_devname) == 0) {
+			check_devname(0, &(dep->ue_dattr), fattrp, CHECK_DEVNAME_FABRIC)) {
 			break;
 		}
 	}

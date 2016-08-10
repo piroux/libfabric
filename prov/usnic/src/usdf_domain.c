@@ -344,3 +344,15 @@ fail:
 	}
 	return ret;
 }
+
+char *
+usdf_domain_getname(uint32_t version, struct usd_device_attrs *dap)
+{
+	char *bufp;
+	if (FI_VERSION_GE(version, FI_VERSION(1, 4)))
+		bufp = strdup(dap->uda_devname);
+	else
+		bufp = strdup("usnic");
+	return bufp;
+}
+	

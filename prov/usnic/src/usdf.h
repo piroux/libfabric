@@ -47,7 +47,7 @@
 
 #define USDF_PROV_NAME "usnic"
 #define USDF_MAJOR_VERS 1
-#define USDF_MINOR_VERS 0
+#define USDF_MINOR_VERS 3
 #define USDF_PROV_VERSION FI_VERSION(USDF_MAJOR_VERS, USDF_MINOR_VERS)
 
 extern struct fi_provider usdf_ops;
@@ -473,6 +473,7 @@ int usdf_endpoint_open(struct fid_domain *domain, struct fi_info *info,
 		struct fid_ep **ep, void *context);
 int usdf_av_open(struct fid_domain *domain, struct fi_av_attr *attr,
 		 struct fid_av **av_o, void *context);
+char *usdf_domain_getname(uint32_t version, struct usd_device_attrs *dap);
 
 
 /* fi_ops_mr */

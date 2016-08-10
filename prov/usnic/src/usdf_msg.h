@@ -93,7 +93,7 @@ int usdf_msg_fill_tx_attr(struct fi_info *hints, struct fi_info *fi);
 int usdf_msg_fill_rx_attr(struct fi_info *hints, struct fi_info *fi);
 int usdf_msg_fill_ep_attr(struct fi_info *hints, struct fi_info *fi,
 		struct usd_device_attrs *dap);
-int usdf_msg_fill_dom_attr(struct fi_info *hints, struct fi_info *fi);
+int usdf_msg_fill_dom_attr(uint32_t version, struct fi_info *hints, struct fi_info *fi, struct usd_device_attrs *dap);
 
 void usdf_msg_ep_timeout(void *vep);
 
