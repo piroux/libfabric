@@ -17,7 +17,7 @@ pkglib_LTLIBRARIES = $(DL_PROVIDERS)
 noinst_LTLIBRARIES =
 
 ACLOCAL_AMFLAGS = -I config
-AM_CFLAGS = -g -Wall
+AM_CFLAGS = -ggdb3 -Wall -Werror
 
 if HAVE_LD_VERSION_SCRIPT
     libfabric_version_script = -Wl,--version-script=$(builddir)/libfabric.map

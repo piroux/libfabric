@@ -261,7 +261,7 @@ static int run(struct fi_info *hints, char *node, char *port)
 	uint64_t flags;
 
 	flags = list_providers ? FI_PROV_ATTR_ONLY : 0;
-	ret = fi_getinfo(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),
+	ret = fi_getinfo(FI_VERSION(1, 4),
 			node, port, flags, hints, &info);
 	if (ret) {
 		fprintf(stderr, "fi_getinfo: %d\n", ret);

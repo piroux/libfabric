@@ -47,7 +47,7 @@
 
 #define USDF_PROV_NAME "usnic"
 #define USDF_MAJOR_VERS 1
-#define USDF_MINOR_VERS 3
+#define USDF_MINOR_VERS 4
 #define USDF_PROV_VERSION FI_VERSION(USDF_MAJOR_VERS, USDF_MINOR_VERS)
 
 extern struct fi_provider usdf_ops;
