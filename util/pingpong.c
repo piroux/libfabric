@@ -387,13 +387,14 @@ int pp_ctrl_init(struct ct_pingpong  *ct)
 			ret = connect(ct->ctrl_connfd, (struct sockaddr *)&ct->ctrl_addr,
 					sizeof(ct->ctrl_addr));
 			if (ret == -1) {
-				err = errno;
+				err = -errno;
 				close(ct->ctrl_connfd);
 				continue;
 			}
 			break;
 		}
 		if (ct->ctrl_connfd == -1) {
+			err = -errno;
 			PP_PRINTERR("getaddrinfo/socket/connect", err);
 			return err;
 		}
