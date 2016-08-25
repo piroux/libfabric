@@ -1,4 +1,4 @@
-.TH fi_pingpong 1 "2016\-08\-01" "Libfabric Programmer\[aq]s Manual" "\@VERSION\@"
+.TH fi_pingpong 1 "2016\-08\-25" "Libfabric Programmer\[aq]s Manual" "\@VERSION\@"
 .SH NAME
 .PP
 fi_pingpong - Quick and simple pingpong test for libfabric
@@ -40,16 +40,16 @@ If they do not match, the client and server may not be able to
 communicate properly.
 .SS Nodes addressing
 .PP
-\f[I]-b <src_port>\f[] : The non-default source port number of the
+\f[I]-B <src_port>\f[] : The non-default source port number of the
 endpoint.
 .PP
-\f[I]-p <dest_port>\f[] : The non-default destination port number of the
+\f[I]-P <dest_port>\f[] : The non-default destination port number of the
 endpoint.
 .PP
 \f[I]-s <src_addr>\f[] : The server address.
 .SS Fabric
 .PP
-\f[I]-f <provider_name>\f[] : The name of the underlying fabric provider
+\f[I]-p <provider_name>\f[] : The name of the underlying fabric provider
 (e.g., sockets, psm, usnic, etc.)
 \&.
 If a provider is not specified via the -f switch, the test will pick one
@@ -58,7 +58,7 @@ from the list of available providers (as returned by fi_getinfo(3)).
 \f[I]-e <endpoint>\f[] where endpoint = (dgram|rdm|msg) : The type of
 endpoint to be used for data messaging between the two processes.
 .PP
-\f[I]-n <domain>\f[] : The name of the specific domain to be used.
+\f[I]-d <domain>\f[] : The name of the specific domain to be used.
 .SS Messaging
 .PP
 \f[I]-I <iter>\f[] : The number of iterations of the test will run.
@@ -67,27 +67,27 @@ endpoint to be used for data messaging between the two processes.
 test will use or \[aq]all\[aq] to run all the default sizes.
 .SS Utils
 .PP
-\f[I]-v\f[] : Activate data integrity checks at the receiver (note: this
+\f[I]-c\f[] : Activate data integrity checks at the receiver (note: this
 may have performance impact).
 .PP
-\f[I]-d\f[] : Activate output debugging (warning: highly verbose)
+\f[I]-v\f[] : Activate output debugging (warning: highly verbose)
 .PP
 \f[I]-h\f[] : Displays help output for the pingpong test.
 .SH USAGE EXAMPLES
 .SS A simple example
-.SS Server: \f[C]fi_pingpong\ -f\ <provider_name>\ -s\ <source_addr>\f[]
+.SS Server: \f[C]fi_pingpong\ -p\ <provider_name>\ -s\ <source_addr>\f[]
 .PP
-\f[C]server$\ fi_pingpong\ -f\ sockets\ -s\ 192.168.0.123\f[]
-.SS Client: \f[C]fi_pingpong\ -f\ <provider_name>\ <server_addr>\f[]
+\f[C]server$\ fi_pingpong\ -p\ sockets\ -s\ 192.168.0.123\f[]
+.SS Client: \f[C]fi_pingpong\ -p\ <provider_name>\ <server_addr>\f[]
 .PP
-\f[C]client$\ fi_pingpong\ -f\ sockets\ 192.168.0.123\f[]
+\f[C]client$\ fi_pingpong\ -p\ sockets\ 192.168.0.123\f[]
 .SS An example with various options
 .SS Server:
 .PP
-\f[C]server$\ fi_pingpong\ -f\ usnic\ -I\ 1000\ -S\ 1024\ -s\ 192.168.0.123\f[]
+\f[C]server$\ fi_pingpong\ -p\ usnic\ -I\ 1000\ -S\ 1024\ -s\ 192.168.0.123\f[]
 .SS Client:
 .PP
-\f[C]client$\ fi_pingpong\ -f\ usnic\ -I\ 1000\ -S\ 1024\ 192.168.0.123\f[]
+\f[C]client$\ fi_pingpong\ -p\ usnic\ -I\ 1000\ -S\ 1024\ 192.168.0.123\f[]
 .PP
 Specifically, this will run a pingpong test with:
 .IP
@@ -102,10 +102,10 @@ Specifically, this will run a pingpong test with:
 .SS A longer test
 .SS Server:
 .PP
-\f[C]server$\ fi_pingpong\ -f\ usnic\ -I\ 10000\ -S\ all\ -s\ 192.168.0.123\f[]
+\f[C]server$\ fi_pingpong\ -p\ usnic\ -I\ 10000\ -S\ all\ -s\ 192.168.0.123\f[]
 .SS Client:
 .PP
-\f[C]client$\ fi_pingpong\ -f\ usnic\ -I\ 10000\ -S\ all\ 192.168.0.123\f[]
+\f[C]client$\ fi_pingpong\ -p\ usnic\ -I\ 10000\ -S\ all\ 192.168.0.123\f[]
 .SH DEFAULTS
 .PP
 There is no default provider; if a provider is not specified via the

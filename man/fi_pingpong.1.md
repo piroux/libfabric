@@ -43,10 +43,10 @@ The client's command line options must match those used on the server. If they d
 
 ## Nodes addressing
 
-*-b \<src_port\>*
+*-B \<src_port\>*
 : The non-default source port number of the endpoint.
 
-*-p \<dest_port\>*
+*-P \<dest_port\>*
 : The non-default destination port number of the endpoint.
 
 *-s \<src_addr\>*
@@ -54,13 +54,13 @@ The client's command line options must match those used on the server. If they d
 
 ## Fabric
 
-*-f \<provider_name\>*
+*-p \<provider_name\>*
 : The name of the underlying fabric provider (e.g., sockets, psm, usnic, etc.). If a provider is not specified via the -f switch, the test will pick one from the list of available providers (as returned by fi_getinfo(3)).
 
 *-e \<endpoint\>* where endpoint = (dgram|rdm|msg)
 : The type of endpoint to be used for data messaging between the two processes.
 
-*-n \<domain\>*
+*-d \<domain\>*
 : The name of the specific domain to be used.
 
 ## Messaging
@@ -73,10 +73,10 @@ The client's command line options must match those used on the server. If they d
 
 ## Utils
 
-*-v*
+*-c*
 : Activate data integrity checks at the receiver (note: this may have performance impact).
 
-*-d*
+*-v*
 : Activate output debugging (warning: highly verbose)
 
 *-h*
@@ -87,19 +87,19 @@ The client's command line options must match those used on the server. If they d
 
 ## A simple example
 
-### Server: `fi_pingpong -f <provider_name> -s <source_addr>`
-`server$ fi_pingpong -f sockets -s 192.168.0.123`
+### Server: `fi_pingpong -p <provider_name> -s <source_addr>`
+`server$ fi_pingpong -p sockets -s 192.168.0.123`
 
-### Client: `fi_pingpong -f <provider_name> <server_addr>`
-`client$ fi_pingpong -f sockets 192.168.0.123`
+### Client: `fi_pingpong -p <provider_name> <server_addr>`
+`client$ fi_pingpong -p sockets 192.168.0.123`
 
 ## An example with various options
 
 ### Server:
-`server$ fi_pingpong -f usnic -I 1000 -S 1024 -s 192.168.0.123`
+`server$ fi_pingpong -p usnic -I 1000 -S 1024 -s 192.168.0.123`
 
 ### Client:
-`client$ fi_pingpong -f usnic -I 1000 -S 1024 192.168.0.123`
+`client$ fi_pingpong -p usnic -I 1000 -S 1024 192.168.0.123`
 
 
 Specifically, this will run a pingpong test with:
@@ -112,10 +112,10 @@ Specifically, this will run a pingpong test with:
 ## A longer test
 
 ### Server:
-`server$ fi_pingpong -f usnic -I 10000 -S all -s 192.168.0.123`
+`server$ fi_pingpong -p usnic -I 10000 -S all -s 192.168.0.123`
 
 ### Client:
-`client$ fi_pingpong -f usnic -I 10000 -S all 192.168.0.123`
+`client$ fi_pingpong -p usnic -I 10000 -S all 192.168.0.123`
 
 
 # DEFAULTS

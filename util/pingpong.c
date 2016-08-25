@@ -58,6 +58,8 @@
 #include <rdma/fi_eq.h>
 #include <rdma/fi_errno.h>
 
+uint64_t get_timestamp();
+
 #ifndef PP_FIVERSION
 #define PP_FIVERSION FI_VERSION(1,3)
 #endif
@@ -113,6 +115,12 @@ struct pp_opts {
 #define PP_MSG_SYNC_Q "q"
 #define PP_MSG_SYNC_A "a"
 
+uint64_t get_timestamp() {
+	struct timeval tv;
+	gettimeofday(&tv,NULL);
+	return tv.tv_sec * 1000000ull + tv.tv_usec;
+}
+
 #define PP_PRINTERR(call, retv)						\
 	do {								\
 		fprintf(stderr, "%s(): %s:%-4d, ret=%d (%s)\n", call,	\
@@ -130,7 +138,7 @@ int pp_debug = 0;
 
 #define PP_DEBUG(fmt, ...)						\
 	if (pp_debug) {							\
-		fprintf(stderr, "[%s] %s:%-4d: " fmt, "debug",		\
+		fprintf(stderr, "%-15" PRIu64 " [%s] %s:%-4d: " fmt, get_timestamp() / 1000, "debug",		\
 			__FILE__, __LINE__, ##__VA_ARGS__);		\
 	}								\
 
@@ -187,6 +195,8 @@ struct ct_pingpong {
 	int ctrl_connfd;
 	struct sockaddr_in ctrl_addr;
 	char ctrl_buf[PP_CTRL_BUF_LEN + 1];
+	char loc_name[PP_MAX_CTRL_MSG];
+	char rem_name[PP_MAX_CTRL_MSG];
 };
 
 static const char integ_alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -315,15 +325,55 @@ void pp_banner_options(struct ct_pingpong *ct)
 	PP_DEBUG("  - %-20s: %s\n", "provider", ct->hints->fabric_attr->prov_name);
 }
 
+void pp_debug_info(struct fi_info *fi) {
+	char *out = fi_tostr(fi, FI_TYPE_INFO);
+	if (out) {
+		PP_DEBUG("error while debugging fi_info (ptr=%#x): %s\n", (unsigned int)(intptr_t) fi, fi_strerror((int)(intptr_t) out));
+	}
+	else {
+		PP_DEBUG("fi_info :\n");
+		PP_DEBUG("%s\n", out);
+	}
+}
+
+void dump_hex(const void* data, size_t size) {
+	if (pp_debug) {
+		char ascii[17];
+		size_t i, j;
+		ascii[16] = '\0';
+		for (i = 0; i < size; ++i) {
+			fprintf(stderr, "%02X ", ((unsigned char*)data)[i]);
+			if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+				ascii[i % 16] = ((unsigned char*)data)[i];
+			} else {
+				ascii[i % 16] = '.';
+			}
+			if ((i+1) % 8 == 0 || i+1 == size) {
+				fprintf(stderr, " ");
+				if ((i+1) % 16 == 0) {
+					fprintf(stderr, "|  %s \n", ascii);
+				} else if (i+1 == size) {
+					ascii[(i+1) % 16] = '\0';
+					if ((i+1) % 16 <= 8) {
+						fprintf(stderr, " ");
+					}
+					for (j = (i+1) % 16; j < 16; ++j) {
+						fprintf(stderr, "   ");
+					}
+					fprintf(stderr, "|  %s \n", ascii);
+				}
+			}
+		}
+	}
+}
+
 /*******************************************************************************************/
 /*                                   Control Messaging                                     */
 /*******************************************************************************************/
 
 int pp_getaddrinfo(char *name, int port, struct addrinfo **results)
 {
-	//struct in_addr **addr_list;
 	struct addrinfo hints;
-	//struct addrinfo *results;
 	int ret;
 	const char *err_msg;
 	char port_s[6];
@@ -424,7 +474,7 @@ int pp_ctrl_init(struct ct_pingpong  *ct)
 			return err;
 		}
 
-		ret = listen(ct->ctrl_listenfd, 1);
+		ret = listen(ct->ctrl_listenfd, 10);
 		if (ret == -1) {
 			err = -errno;
 			PP_PRINTERR("listen", err);
@@ -484,7 +534,10 @@ int pp_ctrl_recv(struct ct_pingpong *ct, char *buf, size_t size)
 {
 	int ret, err;
 
-	ret = recv(ct->ctrl_connfd, buf, size, 0);
+	do {
+		PP_DEBUG("receiving\n");
+		ret = recv(ct->ctrl_connfd, buf, size, 0);
+	} while (ret == -1 && errno == EAGAIN);
 	if (ret < 0) {
 		err = -errno;
 		PP_PRINTERR("ctrl/read", err);
@@ -579,6 +632,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 
 		PP_DEBUG("CLIENT: syncing\n");
 		ret = pp_ctrl_send(ct, ct->ctrl_buf, sizeof(PP_MSG_SYNC_Q));
+		PP_DEBUG("CLIENT: after send / ret=%d\n", ret);
 		if (ret < 0)
 			return ret;
 		if (ret < sizeof(PP_MSG_SYNC_Q)) {
@@ -588,6 +642,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 		PP_DEBUG("CLIENT: syncing now\n");
 
 		ret = pp_ctrl_recv(ct, ct->ctrl_buf, sizeof(PP_MSG_SYNC_A));
+		PP_DEBUG("CLIENT: after recv / ret=%d\n", ret);
 		if (ret < 0)
 			return ret;
 		if (strcmp(ct->ctrl_buf, PP_MSG_SYNC_A)) {
@@ -599,6 +654,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 	} else {
 		PP_DEBUG("SERVER: syncing\n");
 		ret = pp_ctrl_recv(ct, ct->ctrl_buf, sizeof(PP_MSG_SYNC_Q));
+		PP_DEBUG("SERVER: after recv / ret=%d\n", ret);
 		if (ret < 0)
 			return ret;
 		if (strcmp(ct->ctrl_buf, PP_MSG_SYNC_Q)) {
@@ -611,6 +667,7 @@ int pp_ctrl_sync(struct ct_pingpong *ct)
 		snprintf(ct->ctrl_buf, sizeof(PP_MSG_SYNC_A) , "%s", PP_MSG_SYNC_A);
 
 		ret = pp_ctrl_send(ct, ct->ctrl_buf, sizeof(PP_MSG_SYNC_A));
+		PP_DEBUG("SERVER: after send / ret=%d\n", ret);
 		if (ret < 0)
 			return ret;
 		if (ret < sizeof(PP_MSG_SYNC_A)) {
@@ -796,63 +853,16 @@ void pp_process_eq_err(ssize_t rd, struct fid_eq *eq, const char *fn) {
 /*                                    Addresses handling                                   */
 /*******************************************************************************************/
 
-static int pp_getsrcaddr(char *node, char *service, struct fi_info *hints)
-{
-	struct fi_info *info;
-	int ret = 0;
-
-	ret = fi_getinfo(PP_FIVERSION, node, service, FI_SOURCE, NULL, &info);
-	if (ret) {
-		PP_PRINTERR("fi_getinfo", ret);
-		return ret;
-	}
-	if (!info->src_addr) {
-		PP_ERR("fi_getinfo returned an invalid fi_info: src_addr is NULL");
-		ret = -EINVAL;
-		goto err;
-	}
-
-	hints->src_addrlen = info->src_addrlen;
-	hints->src_addr = calloc(1, hints->src_addrlen);
-	if (!hints->src_addr) {
-		ret = -errno;
-		PP_PRINTERR("calloc", ret);
-		goto err;
-	}
-
-	/* Both src_addr have already been checked */
-	memcpy(hints->src_addr, info->src_addr, hints->src_addrlen);
-
-err:
-	fi_freeinfo(info);
-	return ret;
-}
-
 int pp_read_addr_opts(struct ct_pingpong *ct, char **node, char **service, struct fi_info *hints,
 		uint64_t *flags, struct pp_opts *opts)
 {
-	int ret;
 
 	if (opts->dst_addr) {
-		if (opts->src_addr) {
-			ret = pp_getsrcaddr(opts->src_addr, opts->src_port, hints);
-			if (ret) {
-				PP_ERR("Failed to retrieve/bind the source address for the client");
-				return ret;
-			}
-		}
-
 		if (!opts->dst_port)
 			opts->dst_port = ct->data_port;
-
-		*node = opts->dst_addr;
-		*service = opts->dst_port;
 	} else {
 		if (!opts->src_port)
 			opts->src_port = ct->data_port;
-
-		*node = opts->src_addr;
-		*service = opts->src_port;
 		*flags = FI_SOURCE;
 	}
 
@@ -1398,7 +1408,7 @@ int pp_getinfo(struct ct_pingpong *ct, struct fi_info *hints, struct fi_info **i
 	if (!hints->ep_attr->type)
 		hints->ep_attr->type = FI_EP_DGRAM;
 
-	ret = fi_getinfo(PP_FIVERSION, node, service, flags, hints, info);
+	ret = fi_getinfo(PP_FIVERSION, NULL, NULL, flags, hints, info);
 	if (ret) {
 		PP_PRINTERR("fi_getinfo", ret);
 		return ret;
@@ -1491,48 +1501,120 @@ int pp_init_av(struct ct_pingpong *ct)
 
 	addrlen = PP_MAX_CTRL_MSG;
 
+	ret = fi_getname(&(ct->ep->fid), (char *) ct->loc_name, &addrlen);
+	if (ret) {
+		PP_PRINTERR("fi_getname", ret);
+		return ret;
+	}
+
 	if (ct->opts.dst_addr) {
-		ret = pp_av_insert(ct->av, ct->fi->dest_addr, 1, &(ct->remote_fi_addr), 0, NULL);
+		PP_DEBUG("CLIENT: receiving server name\n");
+		ret = pp_ctrl_recv(ct, ct->rem_name, addrlen);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("CLIENT: received server name\n");
+
+		PP_DEBUG("CLIENT: sending client name\n");
+		ret = pp_ctrl_send(ct, ct->loc_name, addrlen);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("CLIENT: sent client name\n");
+	} else {
+		PP_DEBUG("SERVER: sending server name\n");
+		ret = pp_ctrl_send(ct, ct->loc_name, addrlen);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("SERVER: sent server name\n");
+
+		PP_DEBUG("SERVER: receiving client name\n");
+		ret = pp_ctrl_recv(ct, ct->rem_name, addrlen);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("SERVER: received client name\n");
+	}
+
+	// synchronous av insertion
+	ret = pp_av_insert(ct->av, ct->rem_name, 1, &(ct->remote_fi_addr), 0, NULL);
+	if (ret)
+		return ret;
+
+	PP_DEBUG("Connection-less endpoint: address vector initialized\n");
+
+	return 0;
+}
+
+int pp_exchange_names_connected(struct ct_pingpong *ct)
+{
+	size_t addrlen;
+	int ret, err;
+
+	size_t addr_text_len = 3;
+
+	PP_DEBUG("Connection-based endpoint: setting up connection\n");
+
+	ret = pp_ctrl_sync(ct);
+	if (ret)
+		return ret;
+
+	if (ct->opts.dst_addr) {
+		addrlen = PP_MAX_CTRL_MSG;
+		PP_DEBUG("CLIENT: receiving server name\n");
+		ret = pp_ctrl_recv(ct, ct->ctrl_buf, PP_MAX_CTRL_MSG);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("CLIENT: received server name\n");
+		ret = (int) parse_ulong(ct->ctrl_buf, 999);
+		if (ret < 0)
+			return -EINVAL;
+		addrlen = (size_t) ret;
+		PP_DEBUG("address len = %zu\n", addrlen);
+		memcpy(ct->rem_name, ct->ctrl_buf + addr_text_len + 1, addrlen);
+		ct->ctrl_buf[addrlen + addr_text_len + 1] = '\0';
+
+		ct->hints->dest_addr = malloc(addrlen);
+		if (ct->hints->dest_addr == NULL) {
+			err = -ENOMEM;
+			PP_PRINTERR("malloc", err);
+			return err;
+		}
+		memcpy(ct->hints->dest_addr, ct->rem_name, addrlen);
+
+		ct->hints->dest_addrlen = addrlen;
+		ret = pp_getinfo(ct, ct->hints, &(ct->fi));
 		if (ret)
 			return ret;
-
-		ret = fi_getname(&(ct->ep->fid), (char *) ct->ctrl_buf,
-				 &addrlen);
+	} else {
+		ret = fi_getname(&(ct->pep->fid), (char *) ct->loc_name, &addrlen);
 		if (ret) {
 			PP_PRINTERR("fi_getname", ret);
 			return ret;
 		}
+		if (addrlen > PP_MAX_CTRL_MSG) {
+			err = -EMSGSIZE;
+			PP_DEBUG("The address for this provider is greater than the control buffer\n");
+			PP_PRINTERR("fi_getname", err);
+			return err;
+		}
 
-		PP_DEBUG("CLIENT: sending av\n");
-		ret = pp_ctrl_send(ct, ct->ctrl_buf, addrlen);
+		PP_DEBUG("SERVER: sending server name\n");
+
+		/* The textual representation of addrlen should not exceed 3 bytes.
+		 * There is another byte for the null byte. */
+		ret = snprintf(ct->ctrl_buf, addr_text_len + 1, "%03zu", addrlen);
+		if (ret != addr_text_len) {
+			err = -EMSGSIZE;
+			PP_DEBUG("The address length for this provider is too long\n");
+			PP_PRINTERR("snprintf", err);
+			return err;
+		}
+		memcpy(ct->ctrl_buf + addr_text_len + 1, ct->loc_name, addrlen);
+		ct->ctrl_buf[addrlen + addr_text_len + 1] = '\0';
+
+		ret = pp_ctrl_send(ct, ct->ctrl_buf, PP_MAX_CTRL_MSG);
 		if (ret < 0)
 			return ret;
-		PP_DEBUG("CLIENT: sent av\n");
-
-		PP_DEBUG("CLIENT: waiting for acked av\n");
-		ret = pp_ctrl_recv(ct, ct->ctrl_buf, sizeof(PP_MSG_CHECK_PORT_OK));
-		if (ret < 0)
-			return ret;
-		PP_DEBUG("CLIENT: av acked\n");
-	} else {
-		PP_DEBUG("SERVER: receiving av\n");
-		ret = pp_ctrl_recv(ct, ct->ctrl_buf, addrlen);
-		if (ret < 0)
-			return ret;
-		PP_DEBUG("SERVER: received av\n");
-
-		ret = pp_av_insert(ct->av, (char *) ct->ctrl_buf, 1, &(ct->remote_fi_addr), 0, NULL);
-		if (ret)
-			return ret;
-
-		PP_DEBUG("SERVER: acking av\n");
-		ret = pp_ctrl_send(ct, ct->ctrl_buf, sizeof(PP_MSG_CHECK_PORT_OK));
-		if (ret < 0)
-			return ret;
-		PP_DEBUG("SERVER: acked av\n");
+		PP_DEBUG("SERVER: sent server name\n");
 	}
-
-	PP_DEBUG("Connection-less endpoint: address vector initialized\n");
 
 	return 0;
 }
@@ -1591,10 +1673,13 @@ int pp_server_connect(struct ct_pingpong *ct)
 
 	PP_DEBUG("Connected endpoint: connecting server\n");
 
-	/* Check that the remote is still up */
+	ret = pp_exchange_names_connected(ct);
+	if (ret)
+		goto err;
+
 	ret = pp_ctrl_sync(ct);
 	if (ret)
-		return ret;
+		goto err;
 
 	/* Listen */
 	rd = fi_eq_sread(ct->eq, &event, &entry, sizeof entry, -1, 0);
@@ -1610,25 +1695,39 @@ int pp_server_connect(struct ct_pingpong *ct)
 		goto err;
 	}
 
+	PP_DEBUG("Connecting server 1/3\n");
+
 	ret = fi_domain(ct->fabric, ct->fi, &(ct->domain), NULL);
 	if (ret) {
 		PP_PRINTERR("fi_domain", ret);
 		goto err;
 	}
 
+	PP_DEBUG("Connecting server 2/3\n");
+
 	ret = pp_alloc_active_res(ct, ct->fi);
 	if (ret)
 		goto err;
 
+	PP_DEBUG("Connecting server 3/3\n");
+
 	ret = pp_init_ep(ct);
 	if (ret)
 		goto err;
+
+	PP_DEBUG("accepting\n");
 
 	ret = fi_accept(ct->ep, NULL, 0);
 	if (ret) {
 		PP_PRINTERR("fi_accept", ret);
 		goto err;
 	}
+	
+	ret = pp_ctrl_sync(ct);
+	if (ret)
+		goto err;
+
+	PP_DEBUG("Connecting server last\n");
 
 	/* Accept */
 	rd = fi_eq_sread(ct->eq, &event, &entry, sizeof entry, -1, 0);
@@ -1648,7 +1747,6 @@ int pp_server_connect(struct ct_pingpong *ct)
 	PP_DEBUG("Connected endpoint: server connected\n");
 
 	return 0;
-
 err:
 	fi_reject(ct->pep, ct->fi->handle, NULL, 0);
 	return ret;
@@ -1661,7 +1759,7 @@ int pp_client_connect(struct ct_pingpong *ct)
 	ssize_t rd;
 	int ret;
 
-	ret = pp_getinfo(ct, ct->hints, &(ct->fi));
+	ret = pp_exchange_names_connected(ct);
 	if (ret)
 		return ret;
 
@@ -1682,11 +1780,15 @@ int pp_client_connect(struct ct_pingpong *ct)
 	if (ret)
 		return ret;
 
-	ret = fi_connect(ct->ep, ct->fi->dest_addr, NULL, 0);
+	ret = fi_connect(ct->ep, ct->rem_name, NULL, 0);
 	if (ret) {
 		PP_PRINTERR("fi_connect", ret);
 		return ret;
 	}
+
+	ret = pp_ctrl_sync(ct);
+	if (ret)
+		return ret;
 
 	/* Connect */
 	rd = fi_eq_sread(ct->eq, &event, &entry, sizeof entry, -1, 0);
@@ -1708,9 +1810,10 @@ int pp_client_connect(struct ct_pingpong *ct)
 
 int pp_init_fabric(struct ct_pingpong *ct)
 {
-	int ret;
-
-	PP_DEBUG("Initializing fabric\n");
+	int ret, err;
+	size_t addrlen = 1;
+	
+	int addr_text_len = 3;
 
 	ret = pp_ctrl_init(ct);
 	if (ret)
@@ -1720,30 +1823,150 @@ int pp_init_fabric(struct ct_pingpong *ct)
 	if (ret)
 		return ret;
 
-	ret = pp_getinfo(ct, ct->hints, &(ct->fi));
-	if (ret)
-		return ret;
+	PP_DEBUG("Initializing fabric\n");
 
-	/* Check that the remote is still up */
-	ret = pp_ctrl_sync(ct);
-	if (ret)
-		return ret;
+	PP_DEBUG("Connection-less endpoint: initializing address vector\n");
 
-	ret = pp_open_fabric_res(ct);
-	if (ret)
-		return ret;
+	addrlen = PP_MAX_CTRL_MSG;
 
-	ret = pp_alloc_active_res(ct, ct->fi);
-	if (ret)
-		return ret;
+	if (ct->opts.dst_addr) {
+		addrlen = PP_MAX_CTRL_MSG;
+		PP_DEBUG("CLIENT: receiving server name\n");
+		ret = pp_ctrl_recv(ct, ct->ctrl_buf, PP_MAX_CTRL_MSG);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("CLIENT: received server name\n");
+		ret = (int) parse_ulong(ct->ctrl_buf, 999);
+		if (ret < 0)
+			return -EINVAL;
+		addrlen = (size_t) ret;
+		PP_DEBUG("address len = %zu\n", addrlen);
+		memcpy(ct->rem_name, ct->ctrl_buf + addr_text_len + 1, addrlen);
+		ct->ctrl_buf[addrlen + addr_text_len + 1] = '\0';
+		PP_DEBUG("hexdump of remote address :\n");
+		dump_hex(ct->ctrl_buf + addr_text_len + 1, addrlen);
+		PP_DEBUG("hexdump of remote name :\n");
+		dump_hex(ct->rem_name, addrlen);
 
-	ret = pp_init_ep(ct);
-	if (ret)
-		return ret;
+		PP_DEBUG("Yo\n");
+		ct->hints->dest_addr = malloc(addrlen);
+		if (ct->hints->dest_addr == NULL) {
+			err = -ENOMEM;
+			PP_PRINTERR("malloc", err);
+			return err;
+		}
+		memcpy(ct->hints->dest_addr, ct->rem_name, addrlen);
 
-	ret = pp_init_av(ct);
+		ct->hints->dest_addrlen = addrlen;
+		PP_DEBUG("hexdump of new buffer for remote name :\n");
+		dump_hex(ct->hints->dest_addr, addrlen);
+
+		pp_debug_info(ct->hints);
+
+		ret = pp_getinfo(ct, ct->hints, &(ct->fi));
+		if (ret)
+			return ret;
+
+		ret = pp_open_fabric_res(ct);
+		if (ret)
+			return ret;
+
+		ret = pp_alloc_active_res(ct, ct->fi);
+		if (ret)
+			return ret;
+
+		ret = pp_init_ep(ct);
+		if (ret)
+			return ret;
+
+		ret = fi_getname(&(ct->ep->fid), (char *) ct->loc_name, &addrlen);
+		if (ret) {
+			PP_PRINTERR("fi_getname", ret);
+			return ret;
+		}
+
+		PP_DEBUG("hexdump of local address :\n");
+		dump_hex(ct->loc_name, addrlen);
+
+		PP_DEBUG("CLIENT: sending client name\n");
+		ret = pp_ctrl_send(ct, ct->loc_name, addrlen);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("CLIENT: sent client name\n");
+	} else {
+		PP_DEBUG("SERVER: getinfo\n");
+		ret = pp_getinfo(ct, ct->hints, &(ct->fi));
+		if (ret)
+			return ret;
+
+		PP_DEBUG("SERVER: open fabric resources\n");
+		ret = pp_open_fabric_res(ct);
+		if (ret)
+			return ret;
+
+		PP_DEBUG("SERVER: allocate active resource\n");
+		ret = pp_alloc_active_res(ct, ct->fi);
+		if (ret)
+			return ret;
+
+		PP_DEBUG("SERVER: initialize endpoint\n");
+		ret = pp_init_ep(ct);
+		if (ret)
+			return ret;
+
+		PP_DEBUG("SERVER: fetching local address\n");
+		ret = fi_getname(&(ct->ep->fid), (char *) ct->loc_name, &addrlen);
+		if (ret) {
+			PP_PRINTERR("fi_getname", ret);
+			return ret;
+		}
+		if (addrlen > PP_MAX_CTRL_MSG) {
+			err = -EMSGSIZE;
+			PP_DEBUG("The address for this provider is greater than the control buffer\n");
+			PP_PRINTERR("fi_getname", err);
+			return err;
+		}
+		PP_DEBUG("SERVER: fetched local address: %s\n", ct->loc_name);
+
+		PP_DEBUG("address len = %zu\n", addrlen);
+		PP_DEBUG("hexdump of local address :\n");
+		dump_hex(ct->loc_name, addrlen);
+
+		PP_DEBUG("SERVER: sending server name\n");
+
+		/* The textual representation of addrlen should not exceed 3 bytes.
+		 * There is another byte for the null byte. */
+		ret = snprintf(ct->ctrl_buf, addr_text_len + 1, "%03zu", addrlen);
+		if (ret != addr_text_len) {
+			err = -EMSGSIZE;
+			PP_DEBUG("The address length for this provider is too long\n");
+			PP_PRINTERR("snprintf", err);
+			return err;
+		}
+		memcpy(ct->ctrl_buf + addr_text_len + 1, ct->loc_name, addrlen);
+		ct->ctrl_buf[addrlen + addr_text_len + 1] = '\0';
+
+		PP_DEBUG("SERVER: sending server name\n");
+		ret = pp_ctrl_send(ct, ct->ctrl_buf, PP_MAX_CTRL_MSG);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("SERVER: sent server name\n");
+
+		PP_DEBUG("SERVER: receiving client name\n");
+		ret = pp_ctrl_recv(ct, ct->rem_name, addrlen);
+		if (ret < 0)
+			return ret;
+		PP_DEBUG("SERVER: received client name\n");
+
+		PP_DEBUG("hexdump of remote address :\n");
+		dump_hex(ct->rem_name, addrlen);
+	}
+
+	// synchronous av insertion
+	ret = pp_av_insert(ct->av, ct->rem_name, 1, &(ct->remote_fi_addr), 0, NULL);
 	if (ret)
 		return ret;
+	PP_DEBUG("Connection-less endpoint: address vector initialized\n");
 
 	PP_DEBUG("Fabric Initialized\n");
 
@@ -1900,21 +2123,21 @@ void pp_pingpong_usage(char *name, char *desc)
 
 	fprintf(stderr, "\nOptions:\n");
 
-	fprintf(stderr, " %-20s %s\n", "-b <src_port>", "non default source port number");
-	fprintf(stderr, " %-20s %s\n", "-p <dst_port>", "non default destination port number");
+	fprintf(stderr, " %-20s %s\n", "-B <src_port>", "non default source port number");
+	fprintf(stderr, " %-20s %s\n", "-P <dst_port>", "non default destination port number");
 	fprintf(stderr, " %-20s %s\n", "-s <address>", "server address");
 
-	fprintf(stderr, " %-20s %s\n", "-n <domain>", "domain name");
-	fprintf(stderr, " %-20s %s\n", "-f <provider>", "specific provider name eg sockets, verbs");
+	fprintf(stderr, " %-20s %s\n", "-d <domain>", "domain name");
+	fprintf(stderr, " %-20s %s\n", "-p <provider>", "specific provider name eg sockets, verbs");
 	fprintf(stderr, " %-20s %s\n", "-e <ep_type>", "Endpoint type: msg|rdm|dgram (default:dgram)");
 
 	fprintf(stderr, " %-20s %s\n", "-I <number>", "number of iterations");
 	fprintf(stderr, " %-20s %s\n", "-S <size>", "specific transfer size or 'all'");
 
-	fprintf(stderr, " %-20s %s\n", "-v", "enables data_integrity checks");
+	fprintf(stderr, " %-20s %s\n", "-c", "enables data_integrity checks");
 
 	fprintf(stderr, " %-20s %s\n", "-h", "display this help output");
-	fprintf(stderr, " %-20s %s\n", "-d", "enable debugging output");
+	fprintf(stderr, " %-20s %s\n", "-v", "enable debugging output");
 }
 
 void pp_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
@@ -1922,19 +2145,19 @@ void pp_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 	switch (op) {
 	
 	/* Domain */
-	case 'n':
-		if (!ct->hints->domain_attr) {
-			ct->hints->domain_attr = malloc(sizeof *(ct->hints->domain_attr));
-			if (!ct->hints->domain_attr) {
+	case 'd':
+		if (!ct->hints->fabric_attr) {
+			ct->hints->fabric_attr = malloc(sizeof *(ct->hints->fabric_attr));
+			if (!ct->hints->fabric_attr) {
 				perror("malloc");
 				exit(EXIT_FAILURE);
 			}
 		}
-		ct->hints->domain_attr->name = strdup(optarg);
+		ct->hints->fabric_attr->name = strdup(optarg);
 		break;
 	
-	/* Fabric */
-	case 'f':
+	/* Provider */
+	case 'p':
 		if (!ct->hints->fabric_attr) {
 			ct->hints->fabric_attr = malloc(sizeof *(ct->hints->fabric_attr));
 			if (!ct->hints->fabric_attr) {
@@ -1978,8 +2201,8 @@ void pp_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 		}
 		break;
 	
-	/* Verbose */
-	case 'v':
+	/* Check data */
+	case 'c':
 		ct->opts.options |= PP_OPT_VERIFY_DATA;
 		break;
 	
@@ -1987,10 +2210,10 @@ void pp_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 	case 's':
 		ct->opts.src_addr = optarg;
 		break;
-	case 'b':
+	case 'B':
 		ct->opts.src_port = optarg;
 		break;
-	case 'p':
+	case 'P':
 		ct->opts.dst_port = optarg;
 		break;
 	default:
@@ -2028,6 +2251,10 @@ int pingpong(struct ct_pingpong *ct)
 			ret = pp_rx(ct, ct->ep, ct->opts.transfer_size);
 			if (ret)
 				return ret;
+
+			ret = pp_ctrl_sync(ct);
+			if (ret)
+				return ret;
 		}
 	} else {
 		for (i = 0; i < ct->opts.iterations; i++) {
@@ -2040,6 +2267,10 @@ int pingpong(struct ct_pingpong *ct)
 				ret = pp_inject(ct, ct->ep, ct->opts.transfer_size);
 			else
 				ret = pp_tx(ct, ct->ep, ct->opts.transfer_size);
+			if (ret)
+				return ret;
+
+			ret = pp_ctrl_sync(ct);
 			if (ret)
 				return ret;
 		}
@@ -2146,6 +2377,13 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 	}
 
 	ret = ct->opts.dst_addr ? pp_client_connect(ct) : pp_server_connect(ct);
+
+	if (ct->opts.dst_addr) {
+		PP_DEBUG("CLIENT: client_connect=%d\n", ret);
+	} else {
+		PP_DEBUG("SERVER: server_connect=%d\n", ret);
+	}
+
 	if (ret) {
 		return ret;
 	}
@@ -2155,7 +2393,6 @@ static int run_pingpong_msg(struct ct_pingpong *ct)
 		goto out;
 
 	ret = pp_finalize(ct);
-
 out:
 	fi_shutdown(ct->ep, 0);
 	return ret;
@@ -2182,12 +2419,12 @@ int main(int argc, char **argv)
 	if (!ct.hints)
 		return EXIT_FAILURE;
 
-	while ((op = getopt(argc, argv, "hd" "b:p:s:n:f:e:I:S:v")) != -1) {
+	while ((op = getopt(argc, argv, "hv" "d:p:e:I:S:s:B:P:c" "b:p:s:n:f:e:I:S:v")) != -1) {
 		switch (op) {
 		default:
 			pp_parse_opts(&ct, op, optarg);
 			break;
-		case 'd':
+		case 'v':
 			pp_debug = 1;
 			break;
 		case '?':
