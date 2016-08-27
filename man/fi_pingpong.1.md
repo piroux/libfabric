@@ -13,8 +13,8 @@ fi_pingpong  \- Quick and simple pingpong test for libfabric
 
 # SYNOPSYS
 ```
- fi_pingpong [OPTIONS] [-s <server IP>]	start server
- fi_pingpong [OPTIONS] [<server IP>]	connect to server
+ fi_pingpong [OPTIONS]						start server
+ fi_pingpong [OPTIONS] <server address>		connect to server
 ```
 
 
@@ -31,10 +31,14 @@ Two copies of the program must be launched: first, one copy must be launched as 
 As a client-server test, each have the following usage model:
 
 ## Start the server
-server$ fi_pingpong -s <server endpoint address>
+```
+server$ fi_pingpong
+```
 
 ## Start the client
+```
 client$ fi_pingpong <server endpoint address>
+```
 
 
 # OPTIONS
@@ -49,15 +53,12 @@ The client's command line options must match those used on the server. If they d
 *-P \<dest_port\>*
 : The non-default destination port number of the endpoint.
 
-*-s \<src_addr\>*
-: The server address.
-
 ## Fabric
 
 *-p \<provider_name\>*
 : The name of the underlying fabric provider (e.g., sockets, psm, usnic, etc.). If a provider is not specified via the -f switch, the test will pick one from the list of available providers (as returned by fi_getinfo(3)).
 
-*-e \<endpoint\>* where endpoint = (dgram|rdm|msg)
+*-p \<endpoint\>* where endpoint = (dgram|rdm|msg)
 : The type of endpoint to be used for data messaging between the two processes.
 
 *-d \<domain\>*
@@ -87,8 +88,8 @@ The client's command line options must match those used on the server. If they d
 
 ## A simple example
 
-### Server: `fi_pingpong -p <provider_name> -s <source_addr>`
-`server$ fi_pingpong -p sockets -s 192.168.0.123`
+### Server: `fi_pingpong -p <provider_name>`
+`server$ fi_pingpong -p sockets`
 
 ### Client: `fi_pingpong -p <provider_name> <server_addr>`
 `client$ fi_pingpong -p sockets 192.168.0.123`
@@ -96,7 +97,7 @@ The client's command line options must match those used on the server. If they d
 ## An example with various options
 
 ### Server:
-`server$ fi_pingpong -p usnic -I 1000 -S 1024 -s 192.168.0.123`
+`server$ fi_pingpong -p usnic -I 1000 -S 1024`
 
 ### Client:
 `client$ fi_pingpong -p usnic -I 1000 -S 1024 192.168.0.123`
@@ -112,7 +113,7 @@ Specifically, this will run a pingpong test with:
 ## A longer test
 
 ### Server:
-`server$ fi_pingpong -p usnic -I 10000 -S all -s 192.168.0.123`
+`server$ fi_pingpong -p usnic -I 10000 -S all`
 
 ### Client:
 `client$ fi_pingpong -p usnic -I 10000 -S all 192.168.0.123`
@@ -120,7 +121,7 @@ Specifically, this will run a pingpong test with:
 
 # DEFAULTS
 
-There is no default provider; if a provider is not specified via the `-f` switch, the test will pick one from the list of available providers (as returned by `fi_getinfo`(3)).
+There is no default provider; if a provider is not specified via the `-p` switch, the test will pick one from the list of available providers (as returned by `fi_getinfo`(3)).
 
 If no endpoint type is specified, 'dgram' is used.
 

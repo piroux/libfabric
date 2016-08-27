@@ -1,4 +1,4 @@
-.TH fi_pingpong 1 "2016\-08\-25" "Libfabric Programmer\[aq]s Manual" "\@VERSION\@"
+.TH fi_pingpong 1 "2016\-08\-26" "Libfabric Programmer\[aq]s Manual" "\@VERSION\@"
 .SH NAME
 .PP
 fi_pingpong - Quick and simple pingpong test for libfabric
@@ -6,8 +6,8 @@ fi_pingpong - Quick and simple pingpong test for libfabric
 .IP
 .nf
 \f[C]
-\ fi_pingpong\ [OPTIONS]\ [-s\ <server\ IP>]\ start\ server
-\ fi_pingpong\ [OPTIONS]\ [<server\ IP>]\ \ \ \ connect\ to\ server
+\ fi_pingpong\ [OPTIONS]\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ start\ server
+\ fi_pingpong\ [OPTIONS]\ <server\ address>\ \ \ \ \ connect\ to\ server
 \f[]
 .fi
 .SH DESCRIPTION
@@ -27,11 +27,19 @@ Second, another copy is launched with the address of the server.
 .PP
 As a client-server test, each have the following usage model:
 .SS Start the server
-.PP
-server$ fi_pingpong -s
+.IP
+.nf
+\f[C]
+server$\ fi_pingpong
+\f[]
+.fi
 .SS Start the client
-.PP
-client$ fi_pingpong
+.IP
+.nf
+\f[C]
+client$\ fi_pingpong\ <server\ endpoint\ address>
+\f[]
+.fi
 .SH OPTIONS
 .PP
 The client\[aq]s command line options must match those used on the
@@ -45,8 +53,6 @@ endpoint.
 .PP
 \f[I]-P <dest_port>\f[] : The non-default destination port number of the
 endpoint.
-.PP
-\f[I]-s <src_addr>\f[] : The server address.
 .SS Fabric
 .PP
 \f[I]-p <provider_name>\f[] : The name of the underlying fabric provider
@@ -55,7 +61,7 @@ endpoint.
 If a provider is not specified via the -f switch, the test will pick one
 from the list of available providers (as returned by fi_getinfo(3)).
 .PP
-\f[I]-e <endpoint>\f[] where endpoint = (dgram|rdm|msg) : The type of
+\f[I]-p <endpoint>\f[] where endpoint = (dgram|rdm|msg) : The type of
 endpoint to be used for data messaging between the two processes.
 .PP
 \f[I]-d <domain>\f[] : The name of the specific domain to be used.
@@ -75,16 +81,16 @@ may have performance impact).
 \f[I]-h\f[] : Displays help output for the pingpong test.
 .SH USAGE EXAMPLES
 .SS A simple example
-.SS Server: \f[C]fi_pingpong\ -p\ <provider_name>\ -s\ <source_addr>\f[]
+.SS Server: \f[C]fi_pingpong\ -p\ <provider_name>\f[]
 .PP
-\f[C]server$\ fi_pingpong\ -p\ sockets\ -s\ 192.168.0.123\f[]
+\f[C]server$\ fi_pingpong\ -p\ sockets\f[]
 .SS Client: \f[C]fi_pingpong\ -p\ <provider_name>\ <server_addr>\f[]
 .PP
 \f[C]client$\ fi_pingpong\ -p\ sockets\ 192.168.0.123\f[]
 .SS An example with various options
 .SS Server:
 .PP
-\f[C]server$\ fi_pingpong\ -p\ usnic\ -I\ 1000\ -S\ 1024\ -s\ 192.168.0.123\f[]
+\f[C]server$\ fi_pingpong\ -p\ usnic\ -I\ 1000\ -S\ 1024\f[]
 .SS Client:
 .PP
 \f[C]client$\ fi_pingpong\ -p\ usnic\ -I\ 1000\ -S\ 1024\ 192.168.0.123\f[]
@@ -102,14 +108,14 @@ Specifically, this will run a pingpong test with:
 .SS A longer test
 .SS Server:
 .PP
-\f[C]server$\ fi_pingpong\ -p\ usnic\ -I\ 10000\ -S\ all\ -s\ 192.168.0.123\f[]
+\f[C]server$\ fi_pingpong\ -p\ usnic\ -I\ 10000\ -S\ all\f[]
 .SS Client:
 .PP
 \f[C]client$\ fi_pingpong\ -p\ usnic\ -I\ 10000\ -S\ all\ 192.168.0.123\f[]
 .SH DEFAULTS
 .PP
 There is no default provider; if a provider is not specified via the
-\f[C]-f\f[] switch, the test will pick one from the list of available
+\f[C]-p\f[] switch, the test will pick one from the list of available
 providers (as returned by \f[C]fi_getinfo\f[](3)).
 .PP
 If no endpoint type is specified, \[aq]dgram\[aq] is used.

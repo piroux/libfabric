@@ -89,8 +89,6 @@ struct pp_opts {
 	int transfer_size;
 	int sizes_enabled;
 	int options;
-	int argc;
-	char **argv;
 };
 
 #define PP_SIZE_MAX_POWER_TWO 22
@@ -111,12 +109,6 @@ struct pp_opts {
 #define PP_MSG_LEN_CNT 10
 #define PP_MSG_SYNC_Q "q"
 #define PP_MSG_SYNC_A "a"
-
-uint64_t get_timestamp() {
-	struct timeval tv;
-	gettimeofday(&tv,NULL);
-	return tv.tv_sec * 1000000ull + tv.tv_usec;
-}
 
 #define PP_PRINTERR(call, retv)						\
 	do {								\
@@ -178,7 +170,6 @@ struct ct_pingpong {
 	int data_default_port;
 	char data_port[8];
 
-	char test_name[50];
 	int timeout;
 	struct timespec start, end;
 
@@ -254,23 +245,6 @@ int size_to_count(int size)
 		return 1000;
 	else
 		return 10000;
-}
-
-/* Maybe instead of using ep_name use
- *   fi_tostr(ct->fi->ep_attr->type, FI_TYPE_EP_TYPE);
- *
- * as it already exists and _should be_ future proof.
- * */
-// DEL func IF OK
-char *ep_name(int ep_type) {
-	char *en;
-	switch(ep_type) {
-		case FI_EP_DGRAM:	en = "dgram"; break;
-		case FI_EP_RDM:		en = "rdm"; break;
-		case FI_EP_MSG:		en = "msg"; break;
-		default:		en = "none(error)"; break;
-	}
-	return en;
 }
 
 void pp_banner_fabric_info(struct ct_pingpong *ct)
@@ -897,9 +871,9 @@ int generate_test_sizes(struct pp_opts *opts, size_t tx_size, int **sizes_)
 /*******************************************************************************************/
 
 /* str must be an allocated buffer of PP_STR_LEN bytes */
-char *size_str(char *str, long long size)
+char *size_str(char *str, uint64_t size)
 {
-	long long base, fraction = 0;
+	uint64_t base, fraction = 0;
 	char mag;
 
 	memset(str, '\0', PP_STR_LEN);
@@ -922,27 +896,24 @@ char *size_str(char *str, long long size)
 		fraction = (size % base) * 10 / base;
 
 	if (fraction)
-		snprintf(str, PP_STR_LEN, "%lld.%lld%c", size / base, fraction, mag);
+		snprintf(str, PP_STR_LEN, "%"PRIu64".%"PRIu64"%c", size / base, fraction, mag);
 	else
-		snprintf(str, PP_STR_LEN, "%lld%c", size / base, mag);
+		snprintf(str, PP_STR_LEN, "%"PRIu64"%c", size / base, mag);
 
 	return str;
 }
 
-/* Why not make this take a length parameter instead of assuming one?
- * Also why long long instead of uint64_t?
- */
 /* str must be an allocated buffer of PP_STR_LEN bytes */
-char *cnt_str(char *str, long long cnt)
+char *cnt_str(char *str, size_t size, uint64_t cnt)
 {
 	if (cnt >= 1000000000)
-		snprintf(str, PP_STR_LEN, "%lldb", cnt / 1000000000);
+		snprintf(str, size, "%"PRIu64"b", cnt / 1000000000);
 	else if (cnt >= 1000000)
-		snprintf(str, PP_STR_LEN, "%lldm", cnt / 1000000);
+		snprintf(str, size, "%"PRIu64"m", cnt / 1000000);
 	else if (cnt >= 1000)
-		snprintf(str, PP_STR_LEN, "%lldk", cnt / 1000);
+		snprintf(str, size, "%"PRIu64"k", cnt / 1000);
 	else
-		snprintf(str, PP_STR_LEN, "%lld", cnt);
+		snprintf(str, size, "%"PRIu64, cnt);
 
 	return str;
 }
@@ -963,7 +934,7 @@ void show_perf(char *name, int tsize, int sent, int acked, struct timespec *star
 	static int header = 1;
 	char str[PP_STR_LEN];
 	int64_t elapsed = get_elapsed(start, end, MICRO);
-	long long bytes = (long long) sent * tsize * xfers_per_iter;
+	uint64_t bytes = (uint64_t) sent * tsize * xfers_per_iter;
 	float usec_per_xfer;
 
 	if (sent == 0)
@@ -990,14 +961,14 @@ void show_perf(char *name, int tsize, int sent, int acked, struct timespec *star
 	}
 
 	printf("%-8s", size_str(str, tsize));
-	printf("%-8s", cnt_str(str, sent));
+	printf("%-8s", cnt_str(str, sizeof(str), sent));
 
 	if (sent == acked)
-		printf("=%-8s", cnt_str(str, acked));
+		printf("=%-8s", cnt_str(str, sizeof(str), acked));
 	else if (sent < acked)
-		printf("-%-8s", cnt_str(str, acked - sent));
+		printf("-%-8s", cnt_str(str, sizeof(str), acked - sent));
 	else
-		printf("+%-8s", cnt_str(str, sent - acked));
+		printf("+%-8s", cnt_str(str, sizeof(str), sent - acked));
 
 	printf("%-8s", size_str(str, bytes));
 
@@ -1027,15 +998,12 @@ int pp_cq_readerr(struct fid_cq *cq)
 	return ret;
 }
 
-/*
- * fi_cq_err_entry can be cast to any CQ entry format.
- */
-static int pp_spin_for_comp(struct fid_cq *cq, uint64_t *cur,
-			    uint64_t total, int timeout)
+static int pp_get_cq_comp(struct fid_cq *cq, uint64_t *cur,
+			  uint64_t total, int timeout)
 {
 	struct fi_cq_err_entry comp;
 	struct timespec a, b;
-	int ret;
+	int ret = 0;
 
 	if (timeout >= 0)
 		clock_gettime(CLOCK_MONOTONIC, &a);
@@ -1048,6 +1016,13 @@ static int pp_spin_for_comp(struct fid_cq *cq, uint64_t *cur,
 
 			(*cur)++;
 		} else if (ret < 0 && ret != -FI_EAGAIN) {
+			if (ret == -FI_EAVAIL) {
+				ret = pp_cq_readerr(cq);
+				(*cur)++;
+			} else {
+				PP_PRINTERR("pp_get_cq_comp", ret);
+			}
+
 			return ret;
 		} else if (timeout >= 0) {
 			clock_gettime(CLOCK_MONOTONIC, &b);
@@ -1059,26 +1034,6 @@ static int pp_spin_for_comp(struct fid_cq *cq, uint64_t *cur,
 	}
 
 	return 0;
-}
-
-/* Having a separate pp_spin_for_comp function was done before because there
- * were multiple completion routines, you can probably just make this one
- * function considering this doesn't do much more than call pp_spin_for_comp
- */
-static int pp_get_cq_comp(struct fid_cq *cq, uint64_t *cur,
-			  uint64_t total, int timeout)
-{
-	int ret = pp_spin_for_comp(cq, cur, total, timeout);
-
-	if (ret) {
-		if (ret == -FI_EAVAIL) {
-			ret = pp_cq_readerr(cq);
-			(*cur)++;
-		} else {
-			PP_PRINTERR("pp_get_cq_comp", ret);
-		}
-	}
-	return ret;
 }
 
 int pp_get_rx_comp(struct ct_pingpong *ct, uint64_t total)
@@ -1219,13 +1174,11 @@ ssize_t pp_rx(struct ct_pingpong *ct, struct fid_ep *ep, size_t size)
 /*                                Initialization and allocations                          */
 /*******************************************************************************************/
 
-void init_test(struct ct_pingpong *ct, struct pp_opts *opts, char *test_name, size_t test_name_len)
+void init_test(struct ct_pingpong *ct, struct pp_opts *opts)
 {
 	char sstr[PP_STR_LEN];
 
 	size_str(sstr, opts->transfer_size);
-	if (!strcmp(test_name, "custom"))
-		snprintf(test_name, test_name_len, "%s_lat", sstr);
 	if (!(opts->options & PP_OPT_ITER))
 		opts->iterations = size_to_count(opts->transfer_size);
 
@@ -1399,7 +1352,7 @@ int pp_getinfo(struct ct_pingpong *ct, struct fi_info *hints, struct fi_info **i
 
 int pp_init_ep(struct ct_pingpong *ct)
 {
-	int flags, ret;
+	int ret;
 
 	PP_DEBUG("Initializing endpoint\n");
 
@@ -1409,23 +1362,15 @@ int pp_init_ep(struct ct_pingpong *ct)
 	PP_EP_BIND(ct->ep, ct->txcq, FI_TRANSMIT);
 	PP_EP_BIND(ct->ep, ct->rxcq, FI_RECV);
 
-	/* TODO: use control structure to select counter bindings explicitly */
-	flags = !ct->txcq ? FI_SEND : 0;
-	if (ct->hints->caps & (FI_WRITE | FI_READ))
-		flags |= ct->hints->caps & (FI_WRITE | FI_READ);
-	else if (ct->hints->caps & FI_RMA)
-		flags |= FI_WRITE | FI_READ;
-	flags = !ct->rxcq ? FI_RECV : 0;
-	if (ct->hints->caps & (FI_REMOTE_WRITE | FI_REMOTE_READ))
-		flags |= ct->hints->caps & (FI_REMOTE_WRITE | FI_REMOTE_READ);
-	else if (ct->hints->caps & FI_RMA)
-		flags |= FI_REMOTE_WRITE | FI_REMOTE_READ;
-
 	ret = fi_enable(ct->ep);
 	if (ret) {
 		PP_PRINTERR("fi_enable", ret);
 		return ret;
 	}
+
+	ret = pp_post_rx(ct, ct->ep, MAX(ct->rx_size, PP_MAX_CTRL_MSG), &(ct->rx_ctx));
+	if (ret)
+		return ret;
 
 	PP_DEBUG("Endpoint initialzed\n");
 
@@ -1511,7 +1456,7 @@ int pp_send_name(struct ct_pingpong *ct, struct fid *f, size_t *addrlen) {
 	*addrlen = PP_MAX_CTRL_MSG;
 
 	PP_DEBUG("SERVER: fetching local address\n");
-	ret = fi_getname(&(ct->ep->fid), (char *) ct->loc_name, addrlen);
+	ret = fi_getname(f, (char *) ct->loc_name, addrlen);
 	if (ret) {
 		PP_PRINTERR("fi_getname", ret);
 		return ret;
@@ -1574,7 +1519,7 @@ int pp_recv_name(struct ct_pingpong *ct, size_t *addrlen) {
 	memcpy(ct->hints->dest_addr, ct->rem_name, *addrlen);
 
 	ct->hints->dest_addrlen = *addrlen;
-	
+
 	return 0;
 }
 
@@ -1875,33 +1820,6 @@ int pp_init_fabric(struct ct_pingpong *ct)
 	return 0;
 }
 
-void pp_init_ct_pingpong(struct ct_pingpong *ct)
-{
-	/* Set all members to 0/NULL */
-	memset(ct, 0, sizeof(*ct));
-
-	ct->remote_fi_addr = FI_ADDR_UNSPEC;
-
-	strncpy(ct->test_name, "custom", 50);
-	ct->timeout = -1;
-
-	ct->av_attr = (struct fi_av_attr) {
-		.type = FI_AV_MAP,
-		.count = 1
-	};
-	ct->eq_attr = (struct fi_eq_attr) {
-		.wait_obj = FI_WAIT_UNSPEC
-	};
-	ct->cq_attr = (struct fi_cq_attr) {
-		.wait_obj = FI_WAIT_NONE
-	};
-
-	ct->ctrl_listenfd = -1;
-	ct->ctrl_connfd = -1;
-	ct->data_default_port = 9228;
-	ct->ctrl_port = 47592;
-}
-
 /*******************************************************************************************/
 /*                                Deallocations and Final                                  */
 /*******************************************************************************************/
@@ -1961,17 +1879,17 @@ int pp_finalize(struct ct_pingpong *ct)
 	msg.addr = ct->remote_fi_addr;
 	msg.context = &ctx;
 
-	ret = fi_sendmsg(ct->ep, &msg, FI_INJECT | FI_TRANSMIT_COMPLETE); // control message ?
+	ret = fi_sendmsg(ct->ep, &msg, FI_INJECT | FI_TRANSMIT_COMPLETE);
 	if (ret) {
 		PP_PRINTERR("transmit", ret);
 		return ret;
 	}
 
-	ret = pp_get_tx_comp(ct, ++ct->tx_seq); // control message ?
+	ret = pp_get_tx_comp(ct, ++ct->tx_seq);
 	if (ret)
 		return ret;
 
-	ret = pp_get_rx_comp(ct, ct->rx_seq); // control message ?
+	ret = pp_get_rx_comp(ct, ct->rx_seq);
 	if (ret)
 		return ret;
 
@@ -2001,7 +1919,6 @@ void pp_pingpong_usage(char *name, char *desc)
 
 	fprintf(stderr, " %-20s %s\n", "-B <src_port>", "non default source port number");
 	fprintf(stderr, " %-20s %s\n", "-P <dst_port>", "non default destination port number");
-	fprintf(stderr, " %-20s %s\n", "-s <address>", "server address");
 
 	fprintf(stderr, " %-20s %s\n", "-d <domain>", "domain name");
 	fprintf(stderr, " %-20s %s\n", "-p <provider>", "specific provider name eg sockets, verbs");
@@ -2022,38 +1939,24 @@ void pp_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 
 	/* Domain */
 	case 'd':
-		if (!ct->hints->fabric_attr) {
-			ct->hints->fabric_attr = malloc(sizeof *(ct->hints->fabric_attr));
-			if (!ct->hints->fabric_attr) {
-				perror("malloc");
-				exit(EXIT_FAILURE);
-			}
-		}
-		ct->hints->fabric_attr->name = strdup(optarg);
+		ct->hints->domain_attr->name = strdup(optarg);
 		break;
 
 	/* Provider */
 	case 'p':
-		if (!ct->hints->fabric_attr) {
-			ct->hints->fabric_attr = malloc(sizeof *(ct->hints->fabric_attr));
-			if (!ct->hints->fabric_attr) {
-				perror("malloc");
-				exit(EXIT_FAILURE);
-			}
-		}
-		ct->hints->fabric_attr->prov_name = strdup(optarg);
 		/* The provider name will be checked during the fabric initialization. */
+		ct->hints->fabric_attr->prov_name = strdup(optarg);
 		break;
 
 	/* Endpoint */
 	case 'e':
-		if (!strncasecmp("msg", optarg, 3) && (strlen(optarg) == 3))
+		if (!strncasecmp("msg", optarg, 3) && (strlen(optarg) == 3)) {
 			ct->hints->ep_attr->type = FI_EP_MSG;
-		else if (!strncasecmp("rdm", optarg, 3) && (strlen(optarg) == 3))
+		} else if (!strncasecmp("rdm", optarg, 3) && (strlen(optarg) == 3)) {
 			ct->hints->ep_attr->type = FI_EP_RDM;
-		else if (!strncasecmp("dgram", optarg, 5) && (strlen(optarg) == 5))
+		} else if (!strncasecmp("dgram", optarg, 5) && (strlen(optarg) == 5)) {
 			ct->hints->ep_attr->type = FI_EP_DGRAM;
-		else {
+		} else {
 			fprintf(stderr, "Unknown endpoint : %s\n", optarg);
 			exit(EXIT_FAILURE);
 		}
@@ -2082,13 +1985,17 @@ void pp_parse_opts(struct ct_pingpong *ct, int op, char *optarg)
 		ct->opts.options |= PP_OPT_VERIFY_DATA;
 		break;
 
-	/* Address */
+	/* Source Port */
 	case 'B':
 		ct->opts.src_port = optarg;
 		break;
+
+	/* Destination Port */
 	case 'P':
 		ct->opts.dst_port = optarg;
 		break;
+
+	/* Debug */
 	case 'v':
 		pp_debug = 1;
 		break;
@@ -2178,7 +2085,7 @@ int run_suite_pingpong(struct ct_pingpong *ct)
 
 	for (i = 0; i < sizes_cnt; i++) {
 		ct->opts.transfer_size = sizes[i];
-		init_test(ct, &(ct->opts), ct->test_name, sizeof(ct->test_name));
+		init_test(ct, &(ct->opts));
 		ret = pingpong(ct);
 		if (ret)
 			goto out;
@@ -2276,21 +2183,26 @@ int main(int argc, char **argv)
 
 	ret = EXIT_SUCCESS;
 
-	struct ct_pingpong ct;
-
-	pp_init_ct_pingpong(&ct);
-	ct.opts = (struct pp_opts) {
-		.options = 0,
-		.iterations = 1000,
-		.transfer_size = 1024,
-		.sizes_enabled = PP_DEFAULT_SIZE,
-		.argc = argc, .argv = argv
+	struct ct_pingpong ct = {
+		.timeout = -1,
+		.ctrl_listenfd = -1,
+		.ctrl_connfd = -1,
+		.data_default_port = 9228,
+		.ctrl_port = 47592,
+		.opts  = {
+			.iterations = 1000,
+			.transfer_size = 1024,
+			.sizes_enabled = PP_DEFAULT_SIZE,
+		},
+		.eq_attr.wait_obj = FI_WAIT_UNSPEC,
 	};
 
 	ct.hints = fi_allocinfo();
 	if (!ct.hints)
 		return EXIT_FAILURE;
 	ct.hints->ep_attr->type = FI_EP_DGRAM;
+	ct.hints->caps = FI_MSG;
+	ct.hints->mode = FI_CONTEXT | FI_LOCAL_MR;
 
 	while ((op = getopt(argc, argv, "hv" "d:p:e:I:S:B:P:c")) != -1) {
 		switch (op) {
@@ -2313,18 +2225,12 @@ int main(int argc, char **argv)
 	case FI_EP_DGRAM:
 		if (ct.opts.options & PP_OPT_SIZE)
 			ct.hints->ep_attr->max_msg_size = ct.opts.transfer_size;
-		ct.hints->caps = FI_MSG;
-		ct.hints->mode = FI_CONTEXT | FI_LOCAL_MR;
 		ret = run_pingpong_dgram(&ct);
 		break;
 	case FI_EP_RDM:
-		ct.hints->caps = FI_MSG;
-		ct.hints->mode = FI_CONTEXT | FI_LOCAL_MR;
 		ret = run_pingpong_rdm(&ct);
 		break;
 	case FI_EP_MSG:
-		ct.hints->caps = FI_MSG;
-		ct.hints->mode = FI_CONTEXT | FI_LOCAL_MR;
 		ret = run_pingpong_msg(&ct);
 		break;
 	default:
