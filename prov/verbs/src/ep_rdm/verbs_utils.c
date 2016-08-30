@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2016, Cisco Systems, Inc. All rights reserved.
  * Copyright (c) 2013-2015 Intel Corporation, Inc.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
@@ -148,7 +149,7 @@ int fi_ibv_rdm_postponed_process(struct dlist_entry *postponed_item,
 void fi_ibv_rdm_conn_init_cm_role(struct fi_ibv_rdm_conn *conn,
 				  struct fi_ibv_rdm_ep *ep)
 {
-	const int addr_cmp = memcmp(&conn->addr, &ep->cm.my_addr,
+	const int addr_cmp = memcmp(&conn->addr, &ep->my_addr,
 				    FI_IBV_RDM_DFLT_ADDRLEN);
 
 	if (addr_cmp < 0) {
@@ -168,7 +169,7 @@ void fi_ibv_rdm_conn_init_cm_role(struct fi_ibv_rdm_conn *conn,
  * propagation of error code.
  */
 int fi_ibv_rdm_find_ipoib_addr(const struct sockaddr_in *addr,
-			       struct fi_ibv_rdm_cm* cm)
+			       struct sockaddr_in *ipoib_addr)
 {
 	struct ifaddrs *addrs = NULL;
 	struct ifaddrs *tmp = NULL;
@@ -203,8 +204,9 @@ int fi_ibv_rdm_find_ipoib_addr(const struct sockaddr_in *addr,
 		if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET) {
 			found = !strncmp(tmp->ifa_name, iface, iface_len);
 			if (found) {
-				memcpy(&cm->my_addr, tmp->ifa_addr,
-					sizeof(cm->my_addr));
+				memcpy(ipoib_addr, tmp->ifa_addr,
+					sizeof(*ipoib_addr));
+				ipoib_addr->sin_port = addr->sin_port;
 				break;
 			}
 		}
